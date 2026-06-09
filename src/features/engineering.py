@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import RobustScaler
 
-
 WINDOW_MINUTES = [1, 5, 15]
 TOP_N_COMPONENTS = 20
 
@@ -43,10 +42,13 @@ def build_features(df: pd.DataFrame, fit_scaler: bool = True) -> tuple[pd.DataFr
     else:
         X_scaled = pd.DataFrame(scaler.transform(X), columns=feature_cols, index=df.index)
 
-    result = pd.concat([
-        df[["timestamp", "node", "is_anomaly"]].reset_index(drop=True),
-        X_scaled.reset_index(drop=True),
-    ], axis=1)
+    result = pd.concat(
+        [
+            df[["timestamp", "node", "is_anomaly"]].reset_index(drop=True),
+            X_scaled.reset_index(drop=True),
+        ],
+        axis=1,
+    )
 
     return result, scaler
 
@@ -123,9 +125,9 @@ def _add_node_features(df: pd.DataFrame) -> pd.DataFrame:
         )
         .reset_index()
     )
-    node_stats["node_error_ratio"] = (
-        node_stats["node_error_count"] / node_stats["node_total"].replace(0, np.nan)
-    )
+    node_stats["node_error_ratio"] = node_stats["node_error_count"] / node_stats[
+        "node_total"
+    ].replace(0, np.nan)
     df = df.merge(
         node_stats[["node", "node_error_ratio", "node_avg_severity"]],
         on="node",
@@ -148,9 +150,21 @@ def _add_component_encoding(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _get_feature_cols(df: pd.DataFrame) -> list[str]:
-    skip = {"timestamp", "timestamp_int", "date", "node", "type",
-            "component", "level", "content", "label", "is_anomaly",
-            "datetime_str", "node_repeat", "severity_score"}
+    skip = {
+        "timestamp",
+        "timestamp_int",
+        "date",
+        "node",
+        "type",
+        "component",
+        "level",
+        "content",
+        "label",
+        "is_anomaly",
+        "datetime_str",
+        "node_repeat",
+        "severity_score",
+    }
     return [c for c in df.columns if c not in skip]
 
 

@@ -2,7 +2,6 @@
 
 from langchain_core.prompts import ChatPromptTemplate
 
-
 ANOMALY_SUMMARY_TEMPLATE = """\
 Eres un ingeniero experto en operaciones IT analizando logs de sistema.
 Se detectó una anomalía en el nodo {node} a las {timestamp}.

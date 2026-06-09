@@ -10,7 +10,6 @@ from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import OneClassSVM
 
-
 ModelType = Literal["isolation_forest", "lof", "ocsvm"]
 
 

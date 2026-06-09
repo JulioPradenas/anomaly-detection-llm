@@ -4,9 +4,18 @@ from pathlib import Path
 
 import pandas as pd
 
-
-BGL_COLUMNS = ["label", "timestamp_int", "date", "node", "datetime_str",
-               "node_repeat", "type", "component", "level", "content"]
+BGL_COLUMNS = [
+    "label",
+    "timestamp_int",
+    "date",
+    "node",
+    "datetime_str",
+    "node_repeat",
+    "type",
+    "component",
+    "level",
+    "content",
+]
 
 
 def load_bgl_logs(path: str | Path, nrows: int | None = None) -> pd.DataFrame:

@@ -10,13 +10,15 @@ from src.llm.summarizer import LogSummarizer, _parse_json_response, build_anomal
 
 @pytest.fixture
 def sample_window_df():
-    return pd.DataFrame({
-        "timestamp": pd.to_datetime(["2005-06-04 00:24:32", "2005-06-04 00:24:33"]),
-        "node": ["R23-M1-N8", "R23-M1-N8"],
-        "component": ["KERNEL", "APP"],
-        "content": ["memory error detected", "ciod: failed to read"],
-        "severity_score": [2, 4],
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2005-06-04 00:24:32", "2005-06-04 00:24:33"]),
+            "node": ["R23-M1-N8", "R23-M1-N8"],
+            "component": ["KERNEL", "APP"],
+            "content": ["memory error detected", "ciod: failed to read"],
+            "severity_score": [2, 4],
+        }
+    )
 
 
 def test_fallback_when_ollama_unavailable():
@@ -35,7 +37,9 @@ def test_fallback_when_ollama_unavailable():
 def test_summarize_calls_chain():
     """When Ollama is available, summarize() must call the LangChain chain."""
     fake_response = MagicMock()
-    fake_response.content = '{"resumen": "test", "severidad": "HIGH", "causa_probable": "x", "accion_recomendada": "y"}'
+    fake_response.content = (
+        '{"resumen": "test", "severidad": "HIGH", "causa_probable": "x", "accion_recomendada": "y"}'
+    )
 
     with patch("src.llm.summarizer.LogSummarizer._init_chain"):
         summarizer = LogSummarizer()
@@ -43,10 +47,19 @@ def test_summarize_calls_chain():
         summarizer._chain = MagicMock()
         summarizer._chain.invoke.return_value = fake_response
 
-    context = {"node": "R1", "timestamp": "2005-06-04", "total_events": 10,
-               "error_count": 5, "error_rate": "50.0%", "warning_count": 2,
-               "fatal_count": 1, "components": "KERNEL", "avg_severity": 2.5,
-               "sample_messages": "  - error msg", "anomaly_score": 0.8}
+    context = {
+        "node": "R1",
+        "timestamp": "2005-06-04",
+        "total_events": 10,
+        "error_count": 5,
+        "error_rate": "50.0%",
+        "warning_count": 2,
+        "fatal_count": 1,
+        "components": "KERNEL",
+        "avg_severity": 2.5,
+        "sample_messages": "  - error msg",
+        "anomaly_score": 0.8,
+    }
 
     result = summarizer.summarize(context)
     assert result["severidad"] == "HIGH"

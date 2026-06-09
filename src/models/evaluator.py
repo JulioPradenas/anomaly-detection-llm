@@ -76,7 +76,5 @@ def get_pr_curve(
     scores: np.ndarray | pd.Series,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return (precision, recall, thresholds) for plotting a PR curve."""
-    precision, recall, thresholds = precision_recall_curve(
-        np.asarray(y_true), np.asarray(scores)
-    )
+    precision, recall, thresholds = precision_recall_curve(np.asarray(y_true), np.asarray(scores))
     return precision, recall, thresholds

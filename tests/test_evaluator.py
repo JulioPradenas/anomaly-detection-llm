@@ -42,15 +42,21 @@ def test_evaluate_imperfect(imperfect_predictions):
 
 
 def test_evaluate_model_name():
-    result = evaluate(np.array([0, 1]), np.array([0, 1]), np.array([0.1, 0.9]),
-                      model_name="my_model")
+    result = evaluate(
+        np.array([0, 1]), np.array([0, 1]), np.array([0.1, 0.9]), model_name="my_model"
+    )
     assert result.model_name == "my_model"
 
 
 def test_evaluation_result_as_dict():
     result = EvaluationResult(
-        model_name="IF", precision=0.8, recall=0.7, f1=0.75, aupr=0.82,
-        n_true_anomalies=10, n_predicted_anomalies=9
+        model_name="IF",
+        precision=0.8,
+        recall=0.7,
+        f1=0.75,
+        aupr=0.82,
+        n_true_anomalies=10,
+        n_predicted_anomalies=9,
     )
     d = result.as_dict()
     assert d["model"] == "IF"

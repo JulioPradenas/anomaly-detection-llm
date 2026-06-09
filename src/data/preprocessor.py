@@ -2,9 +2,7 @@
 
 import pandas as pd
 
-
-SEVERITY_ORDER = {"INFO": 0, "WARNING": 1, "WARN": 1, "ERROR": 2,
-                  "SEVERE": 3, "FATAL": 4}
+SEVERITY_ORDER = {"INFO": 0, "WARNING": 1, "WARN": 1, "ERROR": 2, "SEVERE": 3, "FATAL": 4}
 
 
 def add_severity_score(df: pd.DataFrame) -> pd.DataFrame:

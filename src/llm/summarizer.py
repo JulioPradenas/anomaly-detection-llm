@@ -1,9 +1,11 @@
 """LLM-based summarizer for detected anomalies using Ollama + LangChain."""
 
 import json
-import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 import structlog
 
@@ -35,6 +37,7 @@ class LogSummarizer:
     def _init_chain(self) -> None:
         try:
             from langchain_ollama import ChatOllama
+
             from src.llm.prompts import anomaly_summary_prompt
 
             llm = ChatOllama(model=self.model, base_url=self.base_url, temperature=0.1)
@@ -112,9 +115,7 @@ def build_anomaly_context(
     error_rate = f"{error_count / total:.1%}" if total > 0 else "0.0%"
     avg_severity = round(float(df_window["severity_score"].mean()), 2) if total > 0 else 0.0
 
-    components = ", ".join(
-        df_window["component"].value_counts().head(5).index.astype(str).tolist()
-    )
+    components = ", ".join(df_window["component"].value_counts().head(5).index.astype(str).tolist())
     sample_msgs = df_window["content"].dropna().head(n_sample_messages).tolist()
     sample_messages = "\n".join(f"  - {m}" for m in sample_msgs)
 

@@ -1,15 +1,12 @@
 """Tests for data loading and preprocessing."""
 
-import io
 import textwrap
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
-from src.data.loader import load_bgl_logs, load_bgl_sample
+from src.data.loader import load_bgl_logs
 from src.data.preprocessor import add_severity_score, train_test_split_temporal
-
 
 BGL_SAMPLE = textwrap.dedent("""\
     - 1117838570 2005.06.03 R02-M1-N0-C:J12-U11 2005-06-03-15.42.50.363779 R02-M1-N0-C:J12-U11 RAS KERNEL INFO instruction cache parity error corrected

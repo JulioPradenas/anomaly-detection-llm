@@ -1,7 +1,6 @@
 """Tests for feature engineering pipeline."""
 
 import pandas as pd
-import pytest
 
 from src.features.engineering import build_features
 
@@ -17,18 +16,20 @@ def _make_log_df(n: int = 200) -> pd.DataFrame:
     components = rng.choice(["KERNEL", "APP", "NET"], n)
 
     severity_map = {"INFO": 0, "WARNING": 1, "ERROR": 2, "FATAL": 4}
-    severity = [severity_map[l] for l in levels]
+    severity = [severity_map[lvl] for lvl in levels]
 
-    return pd.DataFrame({
-        "timestamp": timestamps,
-        "node": pd.Categorical(nodes),
-        "level": pd.Categorical(levels),
-        "component": pd.Categorical(components),
-        "content": ["test message"] * n,
-        "label": ["-"] * n,
-        "is_anomaly": [False] * n,
-        "severity_score": severity,
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "node": pd.Categorical(nodes),
+            "level": pd.Categorical(levels),
+            "component": pd.Categorical(components),
+            "content": ["test message"] * n,
+            "label": ["-"] * n,
+            "is_anomaly": [False] * n,
+            "severity_score": severity,
+        }
+    )
 
 
 def test_build_features_returns_expected_columns():
@@ -57,6 +58,7 @@ def test_build_features_shape_preserved():
 
 def test_build_features_scaler_returned():
     from sklearn.preprocessing import RobustScaler
+
     df = _make_log_df(100)
     _, scaler = build_features(df, fit_scaler=True)
     assert isinstance(scaler, RobustScaler)
