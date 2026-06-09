@@ -14,6 +14,7 @@ import streamlit as st
 from src.data.loader import load_bgl_logs
 from src.data.preprocessor import add_severity_score, train_test_split_temporal
 from src.features.engineering import build_features, load_features
+from src.llm.summarizer import LogSummarizer, build_anomaly_context
 from src.models.detector import AnomalyDetector
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -29,12 +30,139 @@ MODEL_PATH = Path("models/saved/lof_v1.joblib")
 N_ROWS_DEMO = 500_000
 
 SEVERITY_COLORS = {
-    "LOW": "#4CAF50",
-    "MEDIUM": "#FF9800",
-    "HIGH": "#F44336",
-    "CRITICAL": "#212121",
-    "UNKNOWN": "#9E9E9E",
+    "LOW": "#22c55e",
+    "MEDIUM": "#eab308",
+    "HIGH": "#f97316",
+    "CRITICAL": "#ef4444",
+    "UNKNOWN": "#6b7280",
 }
+
+PLOTLY_TEMPLATE = "plotly_dark"
+CHART_BG = "rgba(0,0,0,0)"
+
+
+# ── CSS injection ─────────────────────────────────────────────────────────────
+st.markdown(
+    """
+<style>
+/* ── Global ── */
+html, body, [data-testid="stAppViewContainer"] {
+    background-color: #0f172a;
+    color: #e2e8f0;
+}
+[data-testid="stAppViewContainer"] > .main {
+    background-color: #0f172a;
+}
+[data-testid="block-container"] {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+}
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    background-color: #0d1b2a;
+    border-right: 1px solid #1e3a5f;
+}
+section[data-testid="stSidebar"] * {
+    color: #cbd5e1;
+}
+
+/* ── Title ── */
+h1 {
+    font-size: 1.8rem !important;
+    font-weight: 800 !important;
+    background: linear-gradient(90deg, #60a5fa 0%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 0 !important;
+}
+h2, h3 {
+    color: #cbd5e1 !important;
+}
+[data-testid="stCaptionContainer"] p {
+    color: #64748b !important;
+    font-size: 0.82rem;
+}
+
+/* ── Metric cards ── */
+[data-testid="metric-container"] {
+    background: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
+    border: 1px solid #2d5a8e;
+    border-radius: 10px;
+    padding: 1rem 1.2rem !important;
+}
+[data-testid="stMetricValue"] {
+    font-size: 1.9rem !important;
+    font-weight: 700;
+    color: #60a5fa !important;
+}
+[data-testid="stMetricLabel"] > div {
+    color: #94a3b8 !important;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+[data-testid="stMetricDelta"] {
+    font-size: 0.8rem !important;
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: transparent;
+    gap: 4px;
+    border-bottom: 1px solid #1e3a5f;
+}
+.stTabs [data-baseweb="tab"] {
+    background: transparent;
+    color: #64748b;
+    font-weight: 600;
+    font-size: 0.88rem;
+    border-radius: 6px 6px 0 0;
+    padding: 0.6rem 1.4rem;
+    border: none;
+}
+.stTabs [aria-selected="true"] {
+    background: rgba(96, 165, 250, 0.1) !important;
+    color: #60a5fa !important;
+    border-bottom: 2px solid #60a5fa !important;
+}
+
+/* ── Buttons ── */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-weight: 600;
+    padding: 0.5rem 1.5rem;
+    transition: opacity 0.2s;
+}
+.stButton > button[kind="primary"]:hover {
+    opacity: 0.85;
+}
+
+/* ── Dataframe ── */
+[data-testid="stDataFrame"] {
+    border: 1px solid #1e3a5f;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* ── Selectbox / Slider labels ── */
+label[data-testid="stWidgetLabel"] p {
+    color: #94a3b8 !important;
+    font-size: 0.85rem;
+}
+
+/* ── Divider ── */
+hr {
+    border-color: #1e3a5f !important;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
 
 # ── Data loading (cached) ─────────────────────────────────────────────────────
@@ -51,6 +179,11 @@ def load_model() -> AnomalyDetector | None:
     return None
 
 
+@st.cache_resource(show_spinner="Conectando a Ollama...")
+def load_summarizer() -> LogSummarizer:
+    return LogSummarizer(model="llama3.2")
+
+
 @st.cache_data(show_spinner="Generando predicciones...")
 def get_predictions(_df: pd.DataFrame, _model: AnomalyDetector) -> pd.DataFrame:
     if FEATURES_PATH.exists():
@@ -65,7 +198,6 @@ def get_predictions(_df: pd.DataFrame, _model: AnomalyDetector) -> pd.DataFrame:
     scores_raw = _model.score_samples(X)
     preds = _model.predict(X)
 
-    # Normalize scores to [0,1] for consistent display across model types
     s_min, s_max = scores_raw.min(), scores_raw.max()
     scores_norm = (scores_raw - s_min) / (s_max - s_min + 1e-9)
 
@@ -94,22 +226,28 @@ score_threshold = st.sidebar.slider(
 )
 
 st.sidebar.markdown("---")
+st.sidebar.markdown(
+    "<small style='color:#475569'>Modelo: LOF · Dataset: BGL 4.7M<br>LLM: Ollama/llama3.2</small>",
+    unsafe_allow_html=True,
+)
+
 demo_mode = not DATA_PATH.exists()
 if demo_mode:
     st.sidebar.warning("Modo demo — dataset no encontrado")
 
 
-def _show_demo_placeholder():
+def _show_demo_placeholder() -> None:
     st.markdown("### Demo — estructura del dashboard")
     st.markdown("""
     **Tab 1 — Resumen en tiempo real:**
     - Métricas: total eventos, anomalías detectadas, tasa, alertas CRITICAL
-    - Serie temporal events normal vs anomalías
+    - Serie temporal eventos normal vs anomalías
     - Heatmap de anomalías por nodo y hora
 
     **Tab 2 — Panel de Alertas:**
     - Tabla filtrable con severidad, nodo, score
     - Distribución de scores por severidad
+    - Análisis LLM on-demand por anomalía
 
     **Tab 3 — Análisis de Modelos:**
     - Distribución de anomaly scores (normal vs anomalía real)
@@ -135,7 +273,7 @@ if model is None:
 
 df_pred = get_predictions(df_raw, model)
 
-# Asignar severidad heurística basada en score (el LLM no está corriendo en el dashboard)
+
 def _assign_severity(score: float) -> str:
     if score < 0.3:
         return "LOW"
@@ -160,20 +298,23 @@ tab1, tab2, tab3 = st.tabs(["Resumen en tiempo real", "Panel de Alertas", "Anál
 with tab1:
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Total eventos", f"{len(df_pred):,}")
+        st.metric("Total eventos (test)", f"{len(df_pred):,}")
     with col2:
         st.metric("Anomalías detectadas", f"{df_pred['is_predicted_anomaly'].sum():,}")
     with col3:
         rate = df_pred["is_predicted_anomaly"].mean()
         st.metric("Tasa de anomalías", f"{rate:.1%}")
     with col4:
-        critical = (anomalies["severidad"] == "CRITICAL").sum()
-        st.metric("Alertas CRITICAL", f"{critical:,}", delta=f"+{critical}" if critical > 0 else None,
-                  delta_color="inverse")
+        critical = int((anomalies["severidad"] == "CRITICAL").sum())
+        st.metric(
+            "Alertas CRITICAL",
+            f"{critical:,}",
+            delta=f"+{critical}" if critical > 0 else None,
+            delta_color="inverse",
+        )
 
     st.markdown("---")
 
-    # Serie temporal
     df_ts = df_pred.set_index("timestamp").resample("1h")["is_predicted_anomaly"].agg(
         anomalias="sum", total="count"
     )
@@ -183,21 +324,28 @@ with tab1:
     fig_ts.add_trace(go.Scatter(
         x=df_ts.index, y=df_ts["normales"],
         fill="tozeroy", name="Normal",
-        line=dict(color="#2196F3"), fillcolor="rgba(33,150,243,0.3)"
+        line=dict(color="#60a5fa", width=1.5),
+        fillcolor="rgba(96,165,250,0.15)",
     ))
     fig_ts.add_trace(go.Scatter(
         x=df_ts.index, y=df_ts["anomalias"],
         fill="tozeroy", name="Anomalía",
-        line=dict(color="#F44336"), fillcolor="rgba(244,67,54,0.5)"
+        line=dict(color="#ef4444", width=1.5),
+        fillcolor="rgba(239,68,68,0.3)",
     ))
     fig_ts.update_layout(
-        title="Serie temporal: eventos normales vs anomalías",
-        xaxis_title="Fecha", yaxis_title="Eventos/hora",
-        height=350, margin=dict(t=40, b=20)
+        template=PLOTLY_TEMPLATE,
+        paper_bgcolor=CHART_BG,
+        plot_bgcolor=CHART_BG,
+        title=dict(text="Serie temporal — eventos normales vs anomalías", font=dict(size=14)),
+        xaxis_title="Fecha",
+        yaxis_title="Eventos/hora",
+        height=340,
+        margin=dict(t=50, b=20, l=20, r=20),
+        legend=dict(orientation="h", y=1.08, x=0),
     )
     st.plotly_chart(fig_ts, use_container_width=True)
 
-    # Heatmap por nodo
     top_nodes = anomalies["node"].value_counts().head(15).index.tolist()
     if top_nodes:
         heat_df = anomalies[anomalies["node"].isin(top_nodes)].copy()
@@ -206,10 +354,16 @@ with tab1:
         fig_heat = px.imshow(
             heat_data,
             color_continuous_scale="YlOrRd",
-            title="Heatmap: anomalías por nodo y hora del día",
+            title="Heatmap — anomalías por nodo y hora del día",
             labels={"x": "Hora", "y": "Nodo", "color": "Anomalías"},
+            template=PLOTLY_TEMPLATE,
         )
-        fig_heat.update_layout(height=400, margin=dict(t=40, b=20))
+        fig_heat.update_layout(
+            paper_bgcolor=CHART_BG,
+            plot_bgcolor=CHART_BG,
+            height=380,
+            margin=dict(t=50, b=20, l=20, r=20),
+        )
         st.plotly_chart(fig_heat, use_container_width=True)
 
 # ── Tab 2: Alert panel ────────────────────────────────────────────────────────
@@ -219,33 +373,137 @@ with tab2:
     if anomalies.empty:
         st.info("No hay alertas con los filtros actuales.")
     else:
-        display_df = anomalies.sort_values("anomaly_score", ascending=False).head(200)
-        display_df["severidad_icon"] = display_df["severidad"].map({
-            "LOW": "🟢 LOW", "MEDIUM": "🟡 MEDIUM",
-            "HIGH": "🔴 HIGH", "CRITICAL": "⚫ CRITICAL",
+        display_df = anomalies.sort_values("anomaly_score", ascending=False).head(200).copy()
+        display_df["Severidad"] = display_df["severidad"].map({
+            "LOW": "🟢 LOW",
+            "MEDIUM": "🟡 MEDIUM",
+            "HIGH": "🟠 HIGH",
+            "CRITICAL": "🔴 CRITICAL",
         })
 
         st.dataframe(
-            display_df[["timestamp", "node", "anomaly_score", "severidad_icon", "is_anomaly"]]
+            display_df[["timestamp", "node", "anomaly_score", "Severidad", "is_anomaly"]]
             .rename(columns={
                 "timestamp": "Timestamp",
                 "node": "Nodo",
                 "anomaly_score": "Score",
-                "severidad_icon": "Severidad",
-                "is_anomaly": "Anomalía real",
+                "is_anomaly": "Real",
             }),
             use_container_width=True,
-            height=400,
+            height=380,
         )
 
-        # Score distribution
         fig_scores = px.histogram(
-            anomalies, x="anomaly_score", color="severidad",
+            anomalies,
+            x="anomaly_score",
+            color="severidad",
             color_discrete_map=SEVERITY_COLORS,
             title="Distribución de anomaly scores por severidad",
             nbins=50,
+            template=PLOTLY_TEMPLATE,
+        )
+        fig_scores.update_layout(
+            paper_bgcolor=CHART_BG,
+            plot_bgcolor=CHART_BG,
+            height=280,
+            margin=dict(t=50, b=20, l=20, r=20),
+            legend=dict(orientation="h", y=1.1),
         )
         st.plotly_chart(fig_scores, use_container_width=True)
+
+    # ── LLM on-demand ─────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Análisis LLM — on demand")
+    st.caption("Selecciona una anomalía para que llama3.2 genere un diagnóstico en lenguaje natural.")
+
+    top_for_llm = anomalies.nlargest(20, "anomaly_score").reset_index(drop=True)
+
+    if top_for_llm.empty:
+        st.info("Ajusta los filtros para ver anomalías disponibles para analizar.")
+    else:
+        options = [
+            f"#{i + 1}  {row['node']}  |  {row['timestamp']}  |  score={row['anomaly_score']:.3f}"
+            for i, row in top_for_llm.iterrows()
+        ]
+        selected_idx = st.selectbox(
+            "Anomalía a analizar:",
+            range(len(options)),
+            format_func=lambda i: options[i],
+        )
+
+        if st.button("Analizar con LLM", type="primary"):
+            row = top_for_llm.iloc[selected_idx]
+            ts = row["timestamp"]
+            node = str(row["node"])
+            score_val = float(row["anomaly_score"])
+
+            window = df_raw[
+                (df_raw["timestamp"] >= ts - pd.Timedelta(minutes=5))
+                & (df_raw["timestamp"] <= ts + pd.Timedelta(minutes=5))
+            ]
+
+            summarizer = load_summarizer()
+
+            if not summarizer.is_available:
+                st.warning("Ollama no disponible. Inicia el servidor con: `ollama serve`")
+            elif window.empty:
+                st.warning("No se encontraron logs en la ventana temporal ±5min para este evento.")
+            else:
+                with st.spinner(f"llama3.2 analizando {node} — {len(window)} eventos en ventana..."):
+                    context = build_anomaly_context(
+                        df_window=window,
+                        anomaly_score=score_val,
+                        node=node,
+                        timestamp=str(ts),
+                    )
+                    result = summarizer.summarize(context)
+
+                sev = result.get("severidad", "UNKNOWN")
+                accent = SEVERITY_COLORS.get(sev, "#6b7280")
+                resp_ms = result.get("response_time_ms", 0)
+
+                st.markdown(
+                    f"""
+<div style="
+  border-left: 5px solid {accent};
+  padding: 1.2rem 1.5rem;
+  background: #1e293b;
+  border-radius: 8px;
+  margin-top: 0.75rem;
+  color: #e2e8f0;
+  font-family: inherit;
+">
+  <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.8rem">
+    <span style="
+      background:{accent};
+      color:#000;
+      font-weight:700;
+      font-size:0.75rem;
+      padding:0.2rem 0.6rem;
+      border-radius:4px;
+      letter-spacing:0.06em;
+    ">{sev}</span>
+    <span style="color:#64748b;font-size:0.8rem">Nodo: {node}</span>
+  </div>
+  <p style="margin:0.5rem 0;color:#e2e8f0">
+    <span style="color:#94a3b8;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em">Resumen</span><br>
+    {result.get("resumen", "N/A")}
+  </p>
+  <p style="margin:0.5rem 0;color:#e2e8f0">
+    <span style="color:#94a3b8;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em">Causa probable</span><br>
+    {result.get("causa_probable", "N/A")}
+  </p>
+  <p style="margin:0.5rem 0;color:#e2e8f0">
+    <span style="color:#94a3b8;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em">Acción recomendada</span><br>
+    {result.get("accion_recomendada", "N/A")}
+  </p>
+  <p style="margin-top:1rem;color:#475569;font-size:0.78rem;border-top:1px solid #334155;padding-top:0.6rem">
+    Tiempo LLM: {resp_ms:.0f}ms &nbsp;·&nbsp; Ventana: {len(window)} eventos &nbsp;·&nbsp; {ts}
+  </p>
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
 
 # ── Tab 3: Model analysis ─────────────────────────────────────────────────────
 with tab3:
@@ -254,28 +512,36 @@ with tab3:
     col1, col2 = st.columns(2)
 
     with col1:
-        # Score distribution: anomalías reales vs falsas
         fig_dist = go.Figure()
         fig_dist.add_trace(go.Histogram(
             x=df_pred[~df_pred["is_anomaly"]]["anomaly_score"],
-            name="Normal (ground truth)", opacity=0.6,
-            marker_color="#2196F3", histnorm="probability density"
+            name="Normal (ground truth)",
+            opacity=0.6,
+            marker_color="#60a5fa",
+            histnorm="probability density",
         ))
         fig_dist.add_trace(go.Histogram(
             x=df_pred[df_pred["is_anomaly"]]["anomaly_score"],
-            name="Anomalía (ground truth)", opacity=0.7,
-            marker_color="#F44336", histnorm="probability density"
+            name="Anomalía (ground truth)",
+            opacity=0.75,
+            marker_color="#ef4444",
+            histnorm="probability density",
         ))
         fig_dist.update_layout(
             barmode="overlay",
-            title="Distribución de scores: Normal vs Anomalía real",
-            xaxis_title="Anomaly score", yaxis_title="Densidad",
-            height=350,
+            template=PLOTLY_TEMPLATE,
+            paper_bgcolor=CHART_BG,
+            plot_bgcolor=CHART_BG,
+            title=dict(text="Distribución de scores — Normal vs Anomalía real", font=dict(size=13)),
+            xaxis_title="Anomaly score (normalizado)",
+            yaxis_title="Densidad",
+            height=340,
+            margin=dict(t=50, b=20, l=20, r=20),
+            legend=dict(orientation="h", y=1.1),
         )
         st.plotly_chart(fig_dist, use_container_width=True)
 
     with col2:
-        # Top nodes por score promedio
         node_scores = (
             df_pred[df_pred["is_predicted_anomaly"]]
             .groupby("node", observed=True)
@@ -285,9 +551,37 @@ with tab3:
         )
         fig_nodes = px.bar(
             node_scores.reset_index(),
-            x="node", y="n_anomalies", color="avg_score",
+            x="node",
+            y="n_anomalies",
+            color="avg_score",
             color_continuous_scale="Reds",
             title="Top 15 nodos con más anomalías detectadas",
+            template=PLOTLY_TEMPLATE,
         )
-        fig_nodes.update_layout(height=350, xaxis_tickangle=45)
+        fig_nodes.update_layout(
+            paper_bgcolor=CHART_BG,
+            plot_bgcolor=CHART_BG,
+            height=340,
+            margin=dict(t=50, b=20, l=20, r=20),
+            xaxis_tickangle=45,
+            coloraxis_showscale=False,
+        )
         st.plotly_chart(fig_nodes, use_container_width=True)
+
+    # Metrics summary
+    st.markdown("---")
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    tp = int((df_pred["is_anomaly"] & df_pred["is_predicted_anomaly"]).sum())
+    fp = int((~df_pred["is_anomaly"] & df_pred["is_predicted_anomaly"]).sum())
+    fn = int((df_pred["is_anomaly"] & ~df_pred["is_predicted_anomaly"]).sum())
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+    with mc1:
+        st.metric("Precision", f"{precision:.4f}")
+    with mc2:
+        st.metric("Recall", f"{recall:.4f}")
+    with mc3:
+        st.metric("F1", f"{f1:.4f}")
+    with mc4:
+        st.metric("Verdaderos positivos", f"{tp:,}")

@@ -84,6 +84,19 @@ def test_parse_json_invalid_returns_fallback():
     assert result["severidad"] == "UNKNOWN"
 
 
+def test_parse_json_truncated_extracts_complete_fields():
+    # llama3.2 cuts the response before closing the JSON — accion_recomendada is incomplete
+    truncated = (
+        '{ "resumen": "TLB errors detected", "severidad": "CRITICAL", '
+        '"causa_probable": "Hardware fault", "accion_recomendada": "Restart nod'
+    )
+    result = _parse_json_response(truncated)
+    assert result["resumen"] == "TLB errors detected"
+    assert result["severidad"] == "CRITICAL"
+    assert result["causa_probable"] == "Hardware fault"
+    assert result["accion_recomendada"] == "N/A"  # truncated field → N/A
+
+
 def test_build_anomaly_context(sample_window_df):
     ctx = build_anomaly_context(
         df_window=sample_window_df,

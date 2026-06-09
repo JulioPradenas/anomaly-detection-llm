@@ -1,6 +1,7 @@
 """LLM-based summarizer for detected anomalies using Ollama + LangChain."""
 
 import json
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -163,10 +164,25 @@ def _parse_json_response(content: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             pass
 
-    # 4. Nothing worked — return raw text so at least resumen is visible
+    # 4. Regex field extraction — handles truncated JSON (llama3.2 cuts mid-response)
+    #    Matches complete "key": "value" pairs even when the closing } is missing.
+    extracted: dict[str, str] = {}
+    for key in ("resumen", "severidad", "causa_probable", "accion_recomendada"):
+        m = re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"', cleaned)
+        if m:
+            extracted[key] = m.group(1)
+    if extracted:
+        return {
+            "resumen": extracted.get("resumen", "N/A"),
+            "severidad": extracted.get("severidad", "UNKNOWN"),
+            "causa_probable": extracted.get("causa_probable", "N/A"),
+            "accion_recomendada": extracted.get("accion_recomendada", "N/A"),
+        }
+
+    # 5. Nothing worked
     return {
         "resumen": cleaned[:300],
         "severidad": "UNKNOWN",
-        "causa_probable": "Could not parse LLM response as JSON",
+        "causa_probable": "Could not parse LLM response",
         "accion_recomendada": "Review logs manually",
     }
