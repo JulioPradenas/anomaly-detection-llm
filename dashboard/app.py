@@ -30,139 +30,268 @@ MODEL_PATH = Path("models/saved/lof_v1.joblib")
 N_ROWS_DEMO = 500_000
 
 SEVERITY_COLORS = {
-    "LOW": "#22c55e",
-    "MEDIUM": "#eab308",
-    "HIGH": "#f97316",
-    "CRITICAL": "#ef4444",
-    "UNKNOWN": "#6b7280",
+    "LOW": "#06d6a0",
+    "MEDIUM": "#f4a261",
+    "HIGH": "#e76f51",
+    "CRITICAL": "#ef233c",
+    "UNKNOWN": "#adb5bd",
 }
 
-PLOTLY_TEMPLATE = "plotly_dark"
+# KPI card gradients (matching image: blue / teal / purple / red)
+KPI_GRADIENTS = [
+    ("135deg, #4361ee 0%, #3a0ca3 100%", "#fff"),   # Total events — blue
+    ("135deg, #2ec4b6 0%, #0096a0 100%", "#fff"),   # Anomalías — teal
+    ("135deg, #7c3aed 0%, #4c1d95 100%", "#fff"),   # Tasa — purple
+    ("135deg, #ef233c 0%, #b5001e 100%", "#fff"),   # Critical — red
+]
+
+PLOTLY_TEMPLATE = "simple_white"
 CHART_BG = "rgba(0,0,0,0)"
+GRID_COLOR = "#e8ecf4"
+FONT_COLOR = "#2d3748"
 
 
 # ── CSS injection ─────────────────────────────────────────────────────────────
 st.markdown(
     """
 <style>
-/* ── Global ── */
-html, body, [data-testid="stAppViewContainer"] {
-    background-color: #0f172a;
-    color: #e2e8f0;
-}
-[data-testid="stAppViewContainer"] > .main {
-    background-color: #0f172a;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ── Reset & base ── */
+html, body, [data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > .main,
+[data-testid="stMain"] {
+    background-color: #f0f3fa !important;
+    font-family: 'Inter', sans-serif;
+    color: #2d3748;
 }
 [data-testid="block-container"] {
-    padding-top: 1.5rem;
-    padding-bottom: 2rem;
+    padding-top: 1.5rem !important;
+    padding-bottom: 2rem !important;
+    max-width: 1400px;
 }
 
 /* ── Sidebar ── */
 section[data-testid="stSidebar"] {
-    background-color: #0d1b2a;
-    border-right: 1px solid #1e3a5f;
+    background-color: #1e2d40 !important;
+    border-right: none;
+    box-shadow: 3px 0 15px rgba(0,0,0,0.15);
 }
 section[data-testid="stSidebar"] * {
-    color: #cbd5e1;
-}
-
-/* ── Title ── */
-h1 {
-    font-size: 1.8rem !important;
-    font-weight: 800 !important;
-    background: linear-gradient(90deg, #60a5fa 0%, #a78bfa 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 0 !important;
-}
-h2, h3 {
     color: #cbd5e1 !important;
 }
+section[data-testid="stSidebar"] .stMarkdown hr {
+    border-color: #2d4a6a !important;
+}
+section[data-testid="stSidebar"] [data-testid="stSidebarTitle"] {
+    color: #e2e8f0 !important;
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+section[data-testid="stSidebar"] [data-baseweb="select"] * {
+    background-color: #253b52 !important;
+    color: #e2e8f0 !important;
+}
+section[data-testid="stSidebar"] [data-baseweb="slider"] * {
+    color: #e2e8f0 !important;
+}
+
+/* ── Title area ── */
+h1 {
+    font-size: 1.65rem !important;
+    font-weight: 800 !important;
+    color: #1e2d40 !important;
+    -webkit-text-fill-color: #1e2d40 !important;
+    margin-bottom: 0 !important;
+    letter-spacing: -0.02em;
+}
+h2, h3 {
+    color: #2d3748 !important;
+    font-weight: 700 !important;
+}
 [data-testid="stCaptionContainer"] p {
-    color: #64748b !important;
+    color: #718096 !important;
     font-size: 0.82rem;
 }
 
-/* ── Metric cards ── */
+/* ── Metric cards (native st.metric) ── */
 [data-testid="metric-container"] {
-    background: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
-    border: 1px solid #2d5a8e;
-    border-radius: 10px;
-    padding: 1rem 1.2rem !important;
+    background: #ffffff !important;
+    border-radius: 14px !important;
+    box-shadow: 0 2px 12px rgba(30,45,64,0.08) !important;
+    border: 1px solid #e8ecf4 !important;
+    padding: 1.2rem 1.5rem !important;
 }
 [data-testid="stMetricValue"] {
-    font-size: 1.9rem !important;
-    font-weight: 700;
-    color: #60a5fa !important;
+    color: #1e2d40 !important;
+    font-weight: 700 !important;
+    font-size: 1.75rem !important;
 }
 [data-testid="stMetricLabel"] > div {
-    color: #94a3b8 !important;
-    font-size: 0.72rem;
+    color: #718096 !important;
+    font-size: 0.73rem !important;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
+    font-weight: 600;
 }
-[data-testid="stMetricDelta"] {
-    font-size: 0.8rem !important;
-}
+[data-testid="stMetricDelta"] svg { display: none; }
 
 /* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] {
-    background: transparent;
-    gap: 4px;
-    border-bottom: 1px solid #1e3a5f;
+    background: transparent !important;
+    gap: 2px;
+    border-bottom: 2px solid #e8ecf4;
 }
 .stTabs [data-baseweb="tab"] {
-    background: transparent;
-    color: #64748b;
+    background: transparent !important;
+    color: #718096 !important;
     font-weight: 600;
-    font-size: 0.88rem;
-    border-radius: 6px 6px 0 0;
-    padding: 0.6rem 1.4rem;
-    border: none;
+    font-size: 0.9rem;
+    padding: 0.65rem 1.4rem;
+    border: none !important;
+    border-radius: 0 !important;
 }
 .stTabs [aria-selected="true"] {
-    background: rgba(96, 165, 250, 0.1) !important;
-    color: #60a5fa !important;
-    border-bottom: 2px solid #60a5fa !important;
+    color: #4361ee !important;
+    border-bottom: 2px solid #4361ee !important;
+    background: transparent !important;
 }
 
 /* ── Buttons ── */
+.stButton > button {
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 0.88rem !important;
+}
 .stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
-    border: none;
-    border-radius: 8px;
-    color: white;
-    font-weight: 600;
-    padding: 0.5rem 1.5rem;
-    transition: opacity 0.2s;
+    background: linear-gradient(135deg, #4361ee 0%, #3a0ca3 100%) !important;
+    border: none !important;
+    color: white !important;
+    padding: 0.5rem 1.8rem !important;
+    box-shadow: 0 4px 14px rgba(67,97,238,0.35) !important;
+    transition: box-shadow 0.2s, transform 0.1s !important;
 }
 .stButton > button[kind="primary"]:hover {
-    opacity: 0.85;
+    box-shadow: 0 6px 20px rgba(67,97,238,0.5) !important;
+    transform: translateY(-1px) !important;
 }
 
 /* ── Dataframe ── */
 [data-testid="stDataFrame"] {
-    border: 1px solid #1e3a5f;
-    border-radius: 8px;
+    border-radius: 12px !important;
     overflow: hidden;
+    box-shadow: 0 2px 8px rgba(30,45,64,0.06);
+    border: 1px solid #e8ecf4 !important;
 }
 
-/* ── Selectbox / Slider labels ── */
-label[data-testid="stWidgetLabel"] p {
-    color: #94a3b8 !important;
-    font-size: 0.85rem;
+/* ── Chart containers ── */
+[data-testid="stPlotlyChart"] {
+    background: #ffffff;
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(30,45,64,0.07);
+    border: 1px solid #e8ecf4;
+    padding: 0.5rem;
+}
+
+/* ── Selectbox ── */
+[data-testid="stSelectbox"] > div > div {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+}
+
+/* ── Slider ── */
+[data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] {
+    background: #4361ee !important;
+}
+
+/* ── Plotly chart text — SVG uses fill, not color ── */
+[data-testid="stPlotlyChart"] text,
+[data-testid="stPlotlyChart"] .gtitle,
+[data-testid="stPlotlyChart"] .xtitle,
+[data-testid="stPlotlyChart"] .ytitle,
+[data-testid="stPlotlyChart"] .xtick text,
+[data-testid="stPlotlyChart"] .ytick text,
+[data-testid="stPlotlyChart"] .legendtext,
+[data-testid="stPlotlyChart"] .g-xtitle text,
+[data-testid="stPlotlyChart"] .g-ytitle text {
+    fill: #2d3748 !important;
+    color: #2d3748 !important;
+}
+
+/* ── Selectbox main content — dropdown list ── */
+[data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    color: #2d3748 !important;
+}
+[data-testid="stSelectbox"] [data-baseweb="select"] span,
+[data-testid="stSelectbox"] [data-baseweb="select"] div {
+    color: #2d3748 !important;
+}
+[data-baseweb="popover"] {
+    background: #ffffff !important;
+}
+[data-baseweb="popover"] ul {
+    background: #ffffff !important;
+}
+[data-baseweb="popover"] li,
+[data-baseweb="menu"] li,
+[data-baseweb="list-item"] {
+    background: #ffffff !important;
+    color: #2d3748 !important;
+}
+[data-baseweb="popover"] li:hover,
+[data-baseweb="menu"] li:hover {
+    background: #f0f3fa !important;
+}
+[data-baseweb="option"] {
+    background: #ffffff !important;
+    color: #2d3748 !important;
+}
+
+/* ── Multiselect tags ── */
+[data-testid="stMultiSelect"] span[data-baseweb="tag"] {
+    background: #4361ee !important;
+    color: #fff !important;
 }
 
 /* ── Divider ── */
 hr {
-    border-color: #1e3a5f !important;
+    border-color: #e8ecf4 !important;
+    margin: 1rem 0 !important;
+}
+
+/* ── Subheader spacing ── */
+[data-testid="stHeadingWithActionElements"] {
+    margin-top: 0.5rem !important;
 }
 </style>
 """,
     unsafe_allow_html=True,
 )
+
+
+def _kpi_card(label: str, value: str, subtitle: str, gradient: str, text_color: str) -> str:
+    return f"""
+<div style="
+  background: linear-gradient({gradient});
+  border-radius: 14px;
+  padding: 1.3rem 1.5rem;
+  color: {text_color};
+  box-shadow: 0 4px 18px rgba(0,0,0,0.12);
+  height: 100%;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+">
+  <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;opacity:0.85">{label}</div>
+  <div style="font-size:2rem;font-weight:800;letter-spacing:-0.02em;margin:0.3rem 0">{value}</div>
+  <div style="font-size:0.78rem;opacity:0.75">{subtitle}</div>
+</div>
+"""
 
 
 # ── Data loading (cached) ─────────────────────────────────────────────────────
@@ -208,7 +337,10 @@ def get_predictions(_df: pd.DataFrame, _model: AnomalyDetector) -> pd.DataFrame:
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
-st.sidebar.title("Filtros")
+st.sidebar.markdown(
+    "<h2 style='color:#e2e8f0!important;font-weight:800;font-size:1.1rem;margin:0'>NOC Dashboard</h2>",
+    unsafe_allow_html=True,
+)
 st.sidebar.markdown("---")
 
 severity_filter = st.sidebar.multiselect(
@@ -218,7 +350,7 @@ severity_filter = st.sidebar.multiselect(
 )
 
 score_threshold = st.sidebar.slider(
-    "Score mínimo de anomalía",
+    "Score mínimo",
     min_value=0.0,
     max_value=1.0,
     value=0.3,
@@ -227,7 +359,11 @@ score_threshold = st.sidebar.slider(
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(
-    "<small style='color:#475569'>Modelo: LOF · Dataset: BGL 4.7M<br>LLM: Ollama/llama3.2</small>",
+    """<div style='color:#94a3b8;font-size:0.78rem;line-height:1.6'>
+    <b style='color:#cbd5e1'>Modelo</b><br>Local Outlier Factor<br>
+    <b style='color:#cbd5e1'>Dataset</b><br>BGL 4.7M eventos<br>
+    <b style='color:#cbd5e1'>LLM</b><br>Ollama / llama3.2
+    </div>""",
     unsafe_allow_html=True,
 )
 
@@ -239,25 +375,15 @@ if demo_mode:
 def _show_demo_placeholder() -> None:
     st.markdown("### Demo — estructura del dashboard")
     st.markdown("""
-    **Tab 1 — Resumen en tiempo real:**
-    - Métricas: total eventos, anomalías detectadas, tasa, alertas CRITICAL
-    - Serie temporal eventos normal vs anomalías
-    - Heatmap de anomalías por nodo y hora
-
-    **Tab 2 — Panel de Alertas:**
-    - Tabla filtrable con severidad, nodo, score
-    - Distribución de scores por severidad
-    - Análisis LLM on-demand por anomalía
-
-    **Tab 3 — Análisis de Modelos:**
-    - Distribución de anomaly scores (normal vs anomalía real)
-    - Top nodos problemáticos
+    **Tab 1 — Resumen en tiempo real:** KPIs, serie temporal, heatmap por nodo
+    **Tab 2 — Panel de Alertas:** tabla de alertas, histograma, análisis LLM on-demand
+    **Tab 3 — Análisis de Modelos:** distribución de scores, top nodos, métricas F1
     """)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 st.title("IT Log Anomaly Detection — NOC Dashboard")
-st.caption("BGL Supercomputer Logs · Local Outlier Factor + LLM Summarizer · Ollama/llama3.2")
+st.caption("BGL Supercomputer Logs  ·  Local Outlier Factor  ·  LLM Summarizer (Ollama/llama3.2)")
 
 if demo_mode:
     st.info("Ejecuta `make download-data` y luego los notebooks 01-03 para ver datos reales.")
@@ -296,24 +422,24 @@ if severity_filter:
 tab1, tab2, tab3 = st.tabs(["Resumen en tiempo real", "Panel de Alertas", "Análisis de Modelos"])
 
 with tab1:
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total eventos (test)", f"{len(df_pred):,}")
-    with col2:
-        st.metric("Anomalías detectadas", f"{df_pred['is_predicted_anomaly'].sum():,}")
-    with col3:
-        rate = df_pred["is_predicted_anomaly"].mean()
-        st.metric("Tasa de anomalías", f"{rate:.1%}")
-    with col4:
-        critical = int((anomalies["severidad"] == "CRITICAL").sum())
-        st.metric(
-            "Alertas CRITICAL",
-            f"{critical:,}",
-            delta=f"+{critical}" if critical > 0 else None,
-            delta_color="inverse",
-        )
+    total_ev = len(df_pred)
+    n_anomalies = int(df_pred["is_predicted_anomaly"].sum())
+    rate = df_pred["is_predicted_anomaly"].mean()
+    critical = int((anomalies["severidad"] == "CRITICAL").sum())
 
-    st.markdown("---")
+    kpi_data = [
+        ("Total eventos (test)", f"{total_ev:,}", "Holdout temporal 20%", *KPI_GRADIENTS[0]),
+        ("Anomalías detectadas", f"{n_anomalies:,}", f"de {total_ev:,} eventos", *KPI_GRADIENTS[1]),
+        ("Tasa de anomalías", f"{rate:.1%}", "Local Outlier Factor", *KPI_GRADIENTS[2]),
+        ("Alertas CRITICAL", f"{critical:,}", "Score ≥ 0.70", *KPI_GRADIENTS[3]),
+    ]
+
+    cols = st.columns(4)
+    for col, (label, value, subtitle, gradient, text_color) in zip(cols, kpi_data):
+        with col:
+            st.markdown(_kpi_card(label, value, subtitle, gradient, text_color), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
 
     df_ts = df_pred.set_index("timestamp").resample("1h")["is_predicted_anomaly"].agg(
         anomalias="sum", total="count"
@@ -324,25 +450,27 @@ with tab1:
     fig_ts.add_trace(go.Scatter(
         x=df_ts.index, y=df_ts["normales"],
         fill="tozeroy", name="Normal",
-        line=dict(color="#60a5fa", width=1.5),
-        fillcolor="rgba(96,165,250,0.15)",
+        line=dict(color="#4361ee", width=2),
+        fillcolor="rgba(67,97,238,0.08)",
     ))
     fig_ts.add_trace(go.Scatter(
         x=df_ts.index, y=df_ts["anomalias"],
         fill="tozeroy", name="Anomalía",
-        line=dict(color="#ef4444", width=1.5),
-        fillcolor="rgba(239,68,68,0.3)",
+        line=dict(color="#ef233c", width=2),
+        fillcolor="rgba(239,35,60,0.12)",
     ))
+    _ax = dict(gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR))
     fig_ts.update_layout(
         template=PLOTLY_TEMPLATE,
         paper_bgcolor=CHART_BG,
         plot_bgcolor=CHART_BG,
-        title=dict(text="Serie temporal — eventos normales vs anomalías", font=dict(size=14)),
-        xaxis_title="Fecha",
-        yaxis_title="Eventos/hora",
-        height=340,
-        margin=dict(t=50, b=20, l=20, r=20),
-        legend=dict(orientation="h", y=1.08, x=0),
+        title=dict(text="Serie temporal — eventos normales vs anomalías", font=dict(size=13, color=FONT_COLOR)),
+        xaxis=dict(title="Fecha", showgrid=True, **_ax),
+        yaxis=dict(title="Eventos/hora", showgrid=True, **_ax),
+        height=310,
+        margin=dict(t=50, b=30, l=30, r=20),
+        legend=dict(orientation="h", y=1.1, x=0, font=dict(color=FONT_COLOR)),
+        font=dict(color=FONT_COLOR),
     )
     st.plotly_chart(fig_ts, use_container_width=True)
 
@@ -353,22 +481,26 @@ with tab1:
         heat_data = heat_df.groupby(["node", "hour"]).size().unstack(fill_value=0)
         fig_heat = px.imshow(
             heat_data,
-            color_continuous_scale="YlOrRd",
+            color_continuous_scale="Blues",
             title="Heatmap — anomalías por nodo y hora del día",
             labels={"x": "Hora", "y": "Nodo", "color": "Anomalías"},
-            template=PLOTLY_TEMPLATE,
         )
         fig_heat.update_layout(
             paper_bgcolor=CHART_BG,
             plot_bgcolor=CHART_BG,
-            height=380,
+            height=360,
             margin=dict(t=50, b=20, l=20, r=20),
+            font=dict(color=FONT_COLOR),
+            title_font=dict(size=13, color=FONT_COLOR),
+            xaxis=dict(tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            yaxis=dict(tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            coloraxis_colorbar=dict(tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
         )
         st.plotly_chart(fig_heat, use_container_width=True)
 
 # ── Tab 2: Alert panel ────────────────────────────────────────────────────────
 with tab2:
-    st.subheader(f"Alertas detectadas ({len(anomalies):,})")
+    st.subheader(f"Alertas detectadas — {len(anomalies):,}")
 
     if anomalies.empty:
         st.info("No hay alertas con los filtros actuales.")
@@ -390,7 +522,7 @@ with tab2:
                 "is_anomaly": "Real",
             }),
             use_container_width=True,
-            height=380,
+            height=360,
         )
 
         fig_scores = px.histogram(
@@ -400,14 +532,18 @@ with tab2:
             color_discrete_map=SEVERITY_COLORS,
             title="Distribución de anomaly scores por severidad",
             nbins=50,
-            template=PLOTLY_TEMPLATE,
         )
         fig_scores.update_layout(
+            template=PLOTLY_TEMPLATE,
             paper_bgcolor=CHART_BG,
             plot_bgcolor=CHART_BG,
-            height=280,
-            margin=dict(t=50, b=20, l=20, r=20),
-            legend=dict(orientation="h", y=1.1),
+            xaxis=dict(gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            yaxis=dict(gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            height=300,
+            margin=dict(t=45, b=70, l=20, r=20),
+            legend=dict(orientation="h", y=-0.22, x=0.5, xanchor="center", font=dict(color=FONT_COLOR)),
+            font=dict(color=FONT_COLOR),
+            title_font=dict(size=13, color=FONT_COLOR),
         )
         st.plotly_chart(fig_scores, use_container_width=True)
 
@@ -459,47 +595,53 @@ with tab2:
                     result = summarizer.summarize(context)
 
                 sev = result.get("severidad", "UNKNOWN")
-                accent = SEVERITY_COLORS.get(sev, "#6b7280")
+                accent = SEVERITY_COLORS.get(sev, "#adb5bd")
                 resp_ms = result.get("response_time_ms", 0)
 
                 st.markdown(
                     f"""
 <div style="
   border-left: 5px solid {accent};
-  padding: 1.2rem 1.5rem;
-  background: #1e293b;
-  border-radius: 8px;
+  padding: 1.4rem 1.6rem;
+  background: #ffffff;
+  border-radius: 12px;
   margin-top: 0.75rem;
-  color: #e2e8f0;
-  font-family: inherit;
+  box-shadow: 0 2px 12px rgba(30,45,64,0.08);
+  border: 1px solid #e8ecf4;
+  border-left: 5px solid {accent};
+  color: #2d3748;
 ">
-  <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.8rem">
+  <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem">
     <span style="
       background:{accent};
-      color:#000;
+      color:#fff;
       font-weight:700;
-      font-size:0.75rem;
-      padding:0.2rem 0.6rem;
-      border-radius:4px;
-      letter-spacing:0.06em;
+      font-size:0.72rem;
+      padding:0.25rem 0.7rem;
+      border-radius:20px;
+      letter-spacing:0.07em;
     ">{sev}</span>
-    <span style="color:#64748b;font-size:0.8rem">Nodo: {node}</span>
+    <span style="color:#718096;font-size:0.82rem;font-weight:500">Nodo: {node}</span>
   </div>
-  <p style="margin:0.5rem 0;color:#e2e8f0">
-    <span style="color:#94a3b8;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em">Resumen</span><br>
-    {result.get("resumen", "N/A")}
-  </p>
-  <p style="margin:0.5rem 0;color:#e2e8f0">
-    <span style="color:#94a3b8;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em">Causa probable</span><br>
-    {result.get("causa_probable", "N/A")}
-  </p>
-  <p style="margin:0.5rem 0;color:#e2e8f0">
-    <span style="color:#94a3b8;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em">Acción recomendada</span><br>
-    {result.get("accion_recomendada", "N/A")}
-  </p>
-  <p style="margin-top:1rem;color:#475569;font-size:0.78rem;border-top:1px solid #334155;padding-top:0.6rem">
-    Tiempo LLM: {resp_ms:.0f}ms &nbsp;·&nbsp; Ventana: {len(window)} eventos &nbsp;·&nbsp; {ts}
-  </p>
+  <div style="display:grid;gap:0.8rem">
+    <div>
+      <div style="color:#a0aec0;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem">Resumen</div>
+      <div style="color:#2d3748;font-size:0.92rem;line-height:1.5">{result.get("resumen","N/A")}</div>
+    </div>
+    <div>
+      <div style="color:#a0aec0;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem">Causa probable</div>
+      <div style="color:#2d3748;font-size:0.92rem;line-height:1.5">{result.get("causa_probable","N/A")}</div>
+    </div>
+    <div>
+      <div style="color:#a0aec0;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem">Acción recomendada</div>
+      <div style="color:#2d3748;font-size:0.92rem;line-height:1.5">{result.get("accion_recomendada","N/A")}</div>
+    </div>
+  </div>
+  <div style="margin-top:1rem;padding-top:0.7rem;border-top:1px solid #e8ecf4;color:#a0aec0;font-size:0.76rem">
+    Tiempo LLM: <b style="color:#718096">{resp_ms:.0f}ms</b>
+    &nbsp;·&nbsp; Ventana: <b style="color:#718096">{len(window)} eventos</b>
+    &nbsp;·&nbsp; {ts}
+  </div>
 </div>
 """,
                     unsafe_allow_html=True,
@@ -516,15 +658,15 @@ with tab3:
         fig_dist.add_trace(go.Histogram(
             x=df_pred[~df_pred["is_anomaly"]]["anomaly_score"],
             name="Normal (ground truth)",
-            opacity=0.6,
-            marker_color="#60a5fa",
+            opacity=0.65,
+            marker_color="#4361ee",
             histnorm="probability density",
         ))
         fig_dist.add_trace(go.Histogram(
             x=df_pred[df_pred["is_anomaly"]]["anomaly_score"],
             name="Anomalía (ground truth)",
             opacity=0.75,
-            marker_color="#ef4444",
+            marker_color="#ef233c",
             histnorm="probability density",
         ))
         fig_dist.update_layout(
@@ -532,12 +674,13 @@ with tab3:
             template=PLOTLY_TEMPLATE,
             paper_bgcolor=CHART_BG,
             plot_bgcolor=CHART_BG,
-            title=dict(text="Distribución de scores — Normal vs Anomalía real", font=dict(size=13)),
-            xaxis_title="Anomaly score (normalizado)",
-            yaxis_title="Densidad",
-            height=340,
-            margin=dict(t=50, b=20, l=20, r=20),
-            legend=dict(orientation="h", y=1.1),
+            title=dict(text="Distribución de scores — Normal vs Anomalía", font=dict(size=13, color=FONT_COLOR)),
+            xaxis=dict(title="Anomaly score", gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            yaxis=dict(title="Densidad", gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            height=320,
+            margin=dict(t=50, b=30, l=30, r=20),
+            legend=dict(orientation="h", y=1.1, font=dict(color=FONT_COLOR)),
+            font=dict(color=FONT_COLOR),
         )
         st.plotly_chart(fig_dist, use_container_width=True)
 
@@ -554,34 +697,38 @@ with tab3:
             x="node",
             y="n_anomalies",
             color="avg_score",
-            color_continuous_scale="Reds",
-            title="Top 15 nodos con más anomalías detectadas",
-            template=PLOTLY_TEMPLATE,
+            color_continuous_scale=["#4361ee", "#7c3aed", "#ef233c"],
+            title="Top 15 nodos — anomalías detectadas",
         )
         fig_nodes.update_layout(
+            template=PLOTLY_TEMPLATE,
             paper_bgcolor=CHART_BG,
             plot_bgcolor=CHART_BG,
-            height=340,
-            margin=dict(t=50, b=20, l=20, r=20),
-            xaxis_tickangle=45,
+            xaxis=dict(gridcolor=GRID_COLOR, tickangle=45, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            yaxis=dict(gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            height=320,
+            margin=dict(t=50, b=60, l=30, r=20),
             coloraxis_showscale=False,
+            font=dict(color=FONT_COLOR),
+            title_font=dict(size=13, color=FONT_COLOR),
         )
         st.plotly_chart(fig_nodes, use_container_width=True)
 
     # Metrics summary
     st.markdown("---")
-    mc1, mc2, mc3, mc4 = st.columns(4)
     tp = int((df_pred["is_anomaly"] & df_pred["is_predicted_anomaly"]).sum())
     fp = int((~df_pred["is_anomaly"] & df_pred["is_predicted_anomaly"]).sum())
     fn = int((df_pred["is_anomaly"] & ~df_pred["is_predicted_anomaly"]).sum())
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+
+    mc1, mc2, mc3, mc4 = st.columns(4)
     with mc1:
         st.metric("Precision", f"{precision:.4f}")
     with mc2:
         st.metric("Recall", f"{recall:.4f}")
     with mc3:
-        st.metric("F1", f"{f1:.4f}")
+        st.metric("F1 Score", f"{f1:.4f}")
     with mc4:
         st.metric("Verdaderos positivos", f"{tp:,}")
