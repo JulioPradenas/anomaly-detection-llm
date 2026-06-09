@@ -59,6 +59,18 @@ class HealthResponse(BaseModel):
     model_type: str
 
 
+class AgentChatRequest(BaseModel):
+    message: str
+    session_id: str = Field(default_factory=lambda: str(__import__("uuid").uuid4()))
+    anomaly_context: dict[str, Any] | None = None
+
+
+class AgentChatResponse(BaseModel):
+    response: str
+    tools_used: list[str]
+    session_id: str
+
+
 class RetrainRequest(BaseModel):
     use_llm_labels: bool = True
     min_samples: int = Field(default=100, ge=10)

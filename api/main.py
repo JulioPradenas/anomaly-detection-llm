@@ -6,6 +6,8 @@ from fastapi import FastAPI, HTTPException
 
 from api.predictor import AnomalyPipeline
 from api.schemas import (
+    AgentChatRequest,
+    AgentChatResponse,
     DetectRequest,
     DetectResponse,
     HealthResponse,
@@ -14,9 +16,11 @@ from api.schemas import (
     SummarizeRequest,
     SummarizeResponse,
 )
+from src.llm.agent import LogAgent
 
 
 pipeline = AnomalyPipeline()
+agent = LogAgent()
 
 
 @asynccontextmanager
@@ -182,3 +186,25 @@ async def retrain(request: RetrainRequest):
         retrain_time_ms=round(elapsed_ms, 1),
         labels_source=labels_source,
     )
+
+
+@app.post("/agent/chat", response_model=AgentChatResponse)
+async def agent_chat(request: AgentChatRequest):
+    """Conversational agent with memory — investigates anomalies using LLM + tools."""
+    result = agent.chat(
+        message=request.message,
+        session_id=request.session_id,
+        anomaly_context=request.anomaly_context,
+    )
+    return AgentChatResponse(
+        response=result["response"],
+        tools_used=result["tools_used"],
+        session_id=result["session_id"],
+    )
+
+
+@app.delete("/agent/session/{session_id}")
+async def delete_agent_session(session_id: str):
+    """Clear conversation history for a session."""
+    existed = agent.clear_session(session_id)
+    return {"session_id": session_id, "cleared": existed}
