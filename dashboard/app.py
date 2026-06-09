@@ -49,6 +49,7 @@ PLOTLY_TEMPLATE = "simple_white"
 CHART_BG = "rgba(0,0,0,0)"
 GRID_COLOR = "#e8ecf4"
 FONT_COLOR = "#2d3748"
+HOVER_LABEL = dict(bgcolor="#ffffff", font_size=12, font_color="#2d3748", bordercolor="#e2e8f0")
 
 
 # ── CSS injection ─────────────────────────────────────────────────────────────
@@ -471,6 +472,7 @@ with tab1:
         margin=dict(t=50, b=30, l=30, r=20),
         legend=dict(orientation="h", y=1.1, x=0, font=dict(color=FONT_COLOR)),
         font=dict(color=FONT_COLOR),
+        hoverlabel=HOVER_LABEL,
     )
     st.plotly_chart(fig_ts, use_container_width=True)
 
@@ -495,6 +497,7 @@ with tab1:
             xaxis=dict(tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
             yaxis=dict(tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
             coloraxis_colorbar=dict(tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            hoverlabel=HOVER_LABEL,
         )
         st.plotly_chart(fig_heat, use_container_width=True)
 
@@ -534,16 +537,16 @@ with tab2:
             nbins=50,
         )
         fig_scores.update_layout(
-            template=PLOTLY_TEMPLATE,
-            paper_bgcolor=CHART_BG,
-            plot_bgcolor=CHART_BG,
-            xaxis=dict(gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
-            yaxis=dict(gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+            xaxis=dict(title="Score", gridcolor=GRID_COLOR, showgrid=True, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            yaxis=dict(title="Cantidad", gridcolor=GRID_COLOR, showgrid=True, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
             height=300,
-            margin=dict(t=45, b=70, l=20, r=20),
+            margin=dict(t=45, b=70, l=40, r=20),
             legend=dict(orientation="h", y=-0.22, x=0.5, xanchor="center", font=dict(color=FONT_COLOR)),
             font=dict(color=FONT_COLOR),
             title_font=dict(size=13, color=FONT_COLOR),
+            hoverlabel=HOVER_LABEL,
         )
         st.plotly_chart(fig_scores, use_container_width=True)
 
@@ -654,33 +657,36 @@ with tab3:
     col1, col2 = st.columns(2)
 
     with col1:
+        normal_scores = df_pred.loc[~df_pred["is_anomaly"], "anomaly_score"]
+        anom_scores   = df_pred.loc[df_pred["is_anomaly"],  "anomaly_score"]
+
         fig_dist = go.Figure()
         fig_dist.add_trace(go.Histogram(
-            x=df_pred[~df_pred["is_anomaly"]]["anomaly_score"],
-            name="Normal (ground truth)",
-            opacity=0.65,
-            marker_color="#4361ee",
-            histnorm="probability density",
+            x=normal_scores,
+            name=f"Normal ({len(normal_scores):,})",
+            opacity=0.75,
+            marker=dict(color="#4361ee", line=dict(width=0)),
+            nbinsx=50,
         ))
         fig_dist.add_trace(go.Histogram(
-            x=df_pred[df_pred["is_anomaly"]]["anomaly_score"],
-            name="Anomalía (ground truth)",
-            opacity=0.75,
-            marker_color="#ef233c",
-            histnorm="probability density",
+            x=anom_scores,
+            name=f"Anomalía ({len(anom_scores):,})",
+            opacity=0.65,
+            marker=dict(color="#ef233c", line=dict(width=0)),
+            nbinsx=50,
         ))
         fig_dist.update_layout(
             barmode="overlay",
-            template=PLOTLY_TEMPLATE,
-            paper_bgcolor=CHART_BG,
-            plot_bgcolor=CHART_BG,
-            title=dict(text="Distribución de scores — Normal vs Anomalía", font=dict(size=13, color=FONT_COLOR)),
-            xaxis=dict(title="Anomaly score", gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
-            yaxis=dict(title="Densidad", gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+            title=dict(text="Distribución de scores — Normal vs Anomalía (escala log)", font=dict(size=13, color=FONT_COLOR)),
+            xaxis=dict(title="Anomaly score (normalizado)", gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR), showgrid=True),
+            yaxis=dict(title="Cantidad (log)", type="log", gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR), showgrid=True),
             height=320,
-            margin=dict(t=50, b=30, l=30, r=20),
-            legend=dict(orientation="h", y=1.1, font=dict(color=FONT_COLOR)),
+            margin=dict(t=50, b=60, l=50, r=20),
+            legend=dict(orientation="h", y=-0.22, x=0.5, xanchor="center", font=dict(color=FONT_COLOR)),
             font=dict(color=FONT_COLOR),
+            hoverlabel=HOVER_LABEL,
         )
         st.plotly_chart(fig_dist, use_container_width=True)
 
@@ -711,6 +717,7 @@ with tab3:
             coloraxis_showscale=False,
             font=dict(color=FONT_COLOR),
             title_font=dict(size=13, color=FONT_COLOR),
+            hoverlabel=HOVER_LABEL,
         )
         st.plotly_chart(fig_nodes, use_container_width=True)
 
