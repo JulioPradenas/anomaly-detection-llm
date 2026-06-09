@@ -44,8 +44,17 @@ def test_anomaly_rate_respected():
 def test_to_dict_has_required_keys():
     gen = EventGenerator(seed=6)
     d = gen.next_event().to_dict()
-    for key in ("event_id", "timestamp", "node", "level", "component",
-                "content", "is_anomaly", "anomaly_score", "severity"):
+    for key in (
+        "event_id",
+        "timestamp",
+        "node",
+        "level",
+        "component",
+        "content",
+        "is_anomaly",
+        "anomaly_score",
+        "severity",
+    ):
         assert key in d
 
 
@@ -58,10 +67,12 @@ def test_stream_generator():
 
 def test_with_reference_df():
     rng = np.random.default_rng(42)
-    ref = pd.DataFrame({
-        "anomaly_score": rng.uniform(0, 0.4, 100),
-        "is_anomaly": [False] * 80 + [True] * 20,
-    })
+    ref = pd.DataFrame(
+        {
+            "anomaly_score": rng.uniform(0, 0.4, 100),
+            "is_anomaly": [False] * 80 + [True] * 20,
+        }
+    )
     gen = EventGenerator(reference_df=ref, seed=8)
     assert gen._normal_score_mean < 0.5
 
