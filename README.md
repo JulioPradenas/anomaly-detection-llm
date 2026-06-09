@@ -1,5 +1,13 @@
 # IT Log Anomaly Detection + LLM Summarizer
 
+[![CI](https://github.com/JulioPradenas/anomaly-detection-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/JulioPradenas/anomaly-detection-llm/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![Cobertura](https://img.shields.io/badge/Cobertura-86%25-blue)
+![Tests](https://img.shields.io/badge/Tests-97%20passing-brightgreen)
+![F1 LOF](https://img.shields.io/badge/F1%20LOF-0.947-success)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+![Estado](https://img.shields.io/badge/Estado-Producci%C3%B3n%20Listo-green)
+
 Sistema end-to-end de detección de anomalías en logs de infraestructura IT, con un LLM local que interpreta cada alerta en lenguaje natural — simulando el flujo real de trabajo en plataformas como Splunk + NOC operations.
 
 **Dataset:** BGL (Blue Gene/L) — 4.7M eventos reales de un supercomputador IBM  
