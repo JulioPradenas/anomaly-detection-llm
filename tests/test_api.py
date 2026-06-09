@@ -9,11 +9,16 @@ from api.main import app, pipeline
 
 
 @pytest.fixture(autouse=True)
-def reset_pipeline():
-    """Ensure pipeline state is clean before each test."""
+def reset_pipeline(tmp_path):
+    """Ensure pipeline state is clean before each test — redirect model path so lifespan won't find it."""
+    original_path = pipeline._model_path
+    pipeline._model_path = tmp_path / "nonexistent_model.joblib"
     pipeline._loaded = False
     pipeline.model = None
     yield
+    pipeline._model_path = original_path
+    pipeline._loaded = False
+    pipeline.model = None
 
 
 @pytest.fixture

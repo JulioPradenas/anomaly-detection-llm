@@ -9,6 +9,8 @@ from api.schemas import (
     DetectRequest,
     DetectResponse,
     HealthResponse,
+    RetrainRequest,
+    RetrainResponse,
     SummarizeRequest,
     SummarizeResponse,
 )
@@ -100,4 +102,83 @@ async def summarize(request: SummarizeRequest):
         causa_probable=result.get("causa_probable", ""),
         accion_recomendada=result.get("accion_recomendada", ""),
         response_time_ms=result.get("response_time_ms", 0.0),
+    )
+
+
+@app.post("/retrain", response_model=RetrainResponse)
+async def retrain(request: RetrainRequest):
+    """Retrain using LightGBM on LLM-generated labels (active learning)."""
+    import time
+    from pathlib import Path
+
+    import numpy as np
+
+    from src.data.preprocessor import train_test_split_temporal
+    from src.features.engineering import load_features
+    from src.models.active_learner import ActiveLearner, encode_llm_labels
+    from src.models.evaluator import evaluate
+
+    FEATURES_PATH = Path("data/processed/features_train.parquet")
+    LABELS_PATH = Path("data/labels/llm_confirmed.parquet")
+    AL_MODEL_PATH = Path("models/saved/active_learner_v1.joblib")
+
+    if not FEATURES_PATH.exists():
+        raise HTTPException(status_code=503, detail="Features not found — run notebook 02 first.")
+
+    feat_df = load_features(FEATURES_PATH)
+    feature_cols = [c for c in feat_df.columns if c not in {"timestamp", "node", "is_anomaly"}]
+    train_df, test_df = train_test_split_temporal(feat_df, test_fraction=0.2)
+
+    X_test = test_df[feature_cols].fillna(0).values
+    y_test = test_df["is_anomaly"].values
+
+    # Baseline: current LOF model
+    if pipeline.is_loaded:
+        y_pred_lof = pipeline.model.predict(X_test)
+        scores_lof = pipeline.model.score_samples(X_test)
+        baseline = evaluate(y_test, y_pred_lof, scores_lof, model_name="LOF baseline")
+        f1_before = baseline.f1
+    else:
+        f1_before = 0.0
+
+    # Labels source
+    if request.use_llm_labels and LABELS_PATH.exists():
+        labels_df = __import__("pandas").read_parquet(LABELS_PATH)
+        merged = train_df.merge(labels_df[["timestamp", "node", "llm_label"]], on=["timestamp", "node"], how="inner")
+        merged = merged.dropna(subset=["llm_label"])
+        labels_source = f"llm ({len(merged)} samples)"
+    else:
+        # Fallback: use ground-truth is_anomaly from features
+        merged = train_df.copy()
+        merged["llm_label"] = merged["is_anomaly"].astype(int)
+        labels_source = f"ground_truth ({len(merged)} samples)"
+
+    if len(merged) < request.min_samples:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Only {len(merged)} labeled samples — need at least {request.min_samples}.",
+        )
+
+    X_train_al = merged[feature_cols].fillna(0).values
+    y_train_al = merged["llm_label"].values.astype(int)
+
+    t0 = time.monotonic()
+    learner = ActiveLearner()
+    learner.fit(X_train_al, y_train_al, feature_names=feature_cols)
+    elapsed_ms = (time.monotonic() - t0) * 1000
+
+    y_pred_al = learner.predict(X_test)
+    scores_al = learner.score_samples(X_test)
+    al_result = evaluate(y_test, y_pred_al, scores_al, model_name="ActiveLearner")
+
+    AL_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    learner.save(AL_MODEL_PATH)
+
+    return RetrainResponse(
+        model_version="active_learner_v1",
+        f1_before=round(f1_before, 4),
+        f1_after=round(al_result.f1, 4),
+        n_samples_used=len(merged),
+        retrain_time_ms=round(elapsed_ms, 1),
+        labels_source=labels_source,
     )

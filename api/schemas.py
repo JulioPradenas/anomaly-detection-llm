@@ -57,3 +57,17 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     llm_available: bool
     model_type: str
+
+
+class RetrainRequest(BaseModel):
+    use_llm_labels: bool = True
+    min_samples: int = Field(default=100, ge=10)
+
+
+class RetrainResponse(BaseModel):
+    model_version: str
+    f1_before: float
+    f1_after: float
+    n_samples_used: int
+    retrain_time_ms: float
+    labels_source: str

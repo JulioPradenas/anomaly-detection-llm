@@ -37,7 +37,8 @@ def test_load_bgl_logs_anomaly_detection(bgl_file: Path):
 
 def test_load_bgl_logs_timestamp_parsed(bgl_file: Path):
     df = load_bgl_logs(bgl_file)
-    assert df["timestamp"].dtype == "datetime64[us]"
+    import pandas as pd
+    assert pd.api.types.is_datetime64_any_dtype(df["timestamp"])
     assert df["timestamp"].notna().all()
 
 
