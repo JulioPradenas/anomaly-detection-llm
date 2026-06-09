@@ -13,7 +13,7 @@ from src.llm.summarizer import LogSummarizer, build_anomaly_context
 from src.models.detector import AnomalyDetector
 
 
-DEFAULT_MODEL_PATH = Path("models/saved/isolation_forest_v1.joblib")
+DEFAULT_MODEL_PATH = Path("models/saved/lof_v1.joblib")
 
 
 class AnomalyPipeline:

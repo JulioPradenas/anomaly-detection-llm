@@ -37,7 +37,7 @@ async def health():
         status="ok",
         model_loaded=pipeline.is_loaded,
         llm_available=pipeline.summarizer.is_available,
-        model_type="isolation_forest",
+        model_type="lof",
     )
 
 

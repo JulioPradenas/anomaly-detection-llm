@@ -32,6 +32,8 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.11",
     "pandas-stubs>=2.2",
+    "jupyterlab>=4.0",
+    "ipykernel>=6.0",
 ]
 
 [build-system]

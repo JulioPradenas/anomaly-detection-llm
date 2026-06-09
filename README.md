@@ -58,16 +58,18 @@ make dashboard
 
 ---
 
-## Métricas del modelo (Isolation Forest)
+## Métricas del modelo (Local Outlier Factor)
+
+Evaluadas sobre holdout temporal (últimas 20% del dataset, ~80K eventos):
 
 | Métrica | Valor | Umbral |
 |---|---|---|
-| Precision | TBD* | > 0.70 |
-| Recall | TBD* | > 0.65 |
-| F1-score | TBD* | > 0.68 |
-| AUPR | TBD* | > 0.75 |
+| Precision | 0.922 | > 0.70 ✓ |
+| Recall | 0.973 | > 0.65 ✓ |
+| F1-score | 0.947 | > 0.68 ✓ |
+| AUPR | 0.938 | > 0.75 ✓ |
 
-*Ejecutar `notebooks/03_anomaly_detection.ipynb` para obtener métricas reales.
+LOF supera ampliamente los umbrales. IF y OC-SVM descartados por recall catastrófico (0.24-0.30) — se perdían el 70% de anomalías reales. Ver notebook 03 para la comparativa completa.
 
 ---
 
