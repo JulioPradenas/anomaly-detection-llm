@@ -105,6 +105,7 @@ def test_summarize_with_mocked_llm(client):
 
 # ── /model/health ─────────────────────────────────────────────────────────────
 
+
 def test_model_health_no_features_returns_200(client):
     """When features file doesn't exist, endpoint still returns 200 with fallback."""
     response = client.get("/model/health")
@@ -155,6 +156,7 @@ def test_model_health_with_features(tmp_path, client):
 
 # ── /agent/chat ───────────────────────────────────────────────────────────────
 
+
 def test_agent_chat_returns_response(client):
     """Agent endpoint returns response even when LLM is unavailable."""
     from api.main import agent
@@ -181,6 +183,7 @@ def test_delete_agent_session(client):
 
 # ── /retrain ──────────────────────────────────────────────────────────────────
 
+
 def test_retrain_no_features_returns_503(client):
     """When features file doesn't exist, /retrain returns 503."""
     with patch("api.main.Path") as mock_path_cls:
@@ -206,9 +209,10 @@ def test_retrain_with_features(tmp_path, client):
         }
     )
 
-    with patch("api.main.load_features", return_value=feat_df), patch(
-        "api.main.Path"
-    ) as mock_path_cls:
+    with (
+        patch("api.main.load_features", return_value=feat_df),
+        patch("api.main.Path") as mock_path_cls,
+    ):
 
         def path_side_effect(p):
             if "features_train" in str(p):
@@ -228,9 +232,10 @@ def test_retrain_with_features(tmp_path, client):
 
         mock_path_cls.side_effect = path_side_effect
 
-        with patch("api.main.ActiveLearner") as mock_al_cls, patch(
-            "api.main.evaluate"
-        ) as mock_eval:
+        with (
+            patch("api.main.ActiveLearner") as mock_al_cls,
+            patch("api.main.evaluate") as mock_eval,
+        ):
             mock_learner = MagicMock()
             mock_learner.predict.return_value = np.ones(60, dtype=int)
             mock_learner.score_samples.return_value = np.ones(60) * 0.9
@@ -240,9 +245,7 @@ def test_retrain_with_features(tmp_path, client):
             mock_result.f1 = 0.91
             mock_eval.return_value = mock_result
 
-            response = client.post(
-                "/retrain", json={"use_llm_labels": False, "min_samples": 10}
-            )
+            response = client.post("/retrain", json={"use_llm_labels": False, "min_samples": 10})
 
     assert response.status_code == 200
     data = response.json()

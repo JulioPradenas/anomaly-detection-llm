@@ -103,7 +103,9 @@ def test_promote_model_calls_set_alias():
         client = MagicMock()
         mock_client_cls.return_value = client
 
-        promote_model("AnomalyDetector-LOF", version=2, stage="Production", tracking_uri="./mlflow_test")
+        promote_model(
+            "AnomalyDetector-LOF", version=2, stage="Production", tracking_uri="./mlflow_test"
+        )
 
         client.set_registered_model_alias.assert_called_once_with(
             "AnomalyDetector-LOF", "Production", "2"
