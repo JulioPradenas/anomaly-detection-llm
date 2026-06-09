@@ -25,7 +25,7 @@ st.set_page_config(
 
 DATA_PATH = Path("data/raw/BGL.log")
 FEATURES_PATH = Path("data/processed/features_train.parquet")
-MODEL_PATH = Path("models/saved/isolation_forest_v1.joblib")
+MODEL_PATH = Path("models/saved/lof_v1.joblib")
 N_ROWS_DEMO = 500_000
 
 SEVERITY_COLORS = {
@@ -62,11 +62,15 @@ def get_predictions(_df: pd.DataFrame, _model: AnomalyDetector) -> pd.DataFrame:
     _, test_df = train_test_split_temporal(feat_df, test_fraction=0.2)
 
     X = test_df[feature_cols].fillna(0).values
-    scores = _model.score_samples(X)
+    scores_raw = _model.score_samples(X)
     preds = _model.predict(X)
 
+    # Normalize scores to [0,1] for consistent display across model types
+    s_min, s_max = scores_raw.min(), scores_raw.max()
+    scores_norm = (scores_raw - s_min) / (s_max - s_min + 1e-9)
+
     result = test_df[["timestamp", "node", "is_anomaly"]].copy()
-    result["anomaly_score"] = scores
+    result["anomaly_score"] = scores_norm
     result["is_predicted_anomaly"] = preds.astype(bool)
     return result
 
@@ -94,9 +98,28 @@ demo_mode = not DATA_PATH.exists()
 if demo_mode:
     st.sidebar.warning("Modo demo — dataset no encontrado")
 
+
+def _show_demo_placeholder():
+    st.markdown("### Demo — estructura del dashboard")
+    st.markdown("""
+    **Tab 1 — Resumen en tiempo real:**
+    - Métricas: total eventos, anomalías detectadas, tasa, alertas CRITICAL
+    - Serie temporal events normal vs anomalías
+    - Heatmap de anomalías por nodo y hora
+
+    **Tab 2 — Panel de Alertas:**
+    - Tabla filtrable con severidad, nodo, score
+    - Distribución de scores por severidad
+
+    **Tab 3 — Análisis de Modelos:**
+    - Distribución de anomaly scores (normal vs anomalía real)
+    - Top nodos problemáticos
+    """)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 st.title("IT Log Anomaly Detection — NOC Dashboard")
-st.caption("BGL Supercomputer Logs · Isolation Forest + LLM Summarizer · Ollama/llama3.2")
+st.caption("BGL Supercomputer Logs · Local Outlier Factor + LLM Summarizer · Ollama/llama3.2")
 
 if demo_mode:
     st.info("Ejecuta `make download-data` y luego los notebooks 01-03 para ver datos reales.")
@@ -226,7 +249,7 @@ with tab2:
 
 # ── Tab 3: Model analysis ─────────────────────────────────────────────────────
 with tab3:
-    st.subheader("Análisis del modelo — Isolation Forest")
+    st.subheader("Análisis del modelo — Local Outlier Factor")
 
     col1, col2 = st.columns(2)
 
@@ -268,21 +291,3 @@ with tab3:
         )
         fig_nodes.update_layout(height=350, xaxis_tickangle=45)
         st.plotly_chart(fig_nodes, use_container_width=True)
-
-
-def _show_demo_placeholder():
-    st.markdown("### Demo — estructura del dashboard")
-    st.markdown("""
-    **Tab 1 — Resumen en tiempo real:**
-    - Métricas: total eventos, anomalías detectadas, tasa, alertas CRITICAL
-    - Serie temporal events normal vs anomalías
-    - Heatmap de anomalías por nodo y hora
-
-    **Tab 2 — Panel de Alertas:**
-    - Tabla filtrable con severidad, nodo, score
-    - Distribución de scores por severidad
-
-    **Tab 3 — Análisis de Modelos:**
-    - Distribución de anomaly scores (normal vs anomalía real)
-    - Top nodos problemáticos
-    """)
