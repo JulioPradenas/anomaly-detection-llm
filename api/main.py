@@ -1,6 +1,7 @@
 """FastAPI app for IT log anomaly detection."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 
@@ -17,7 +18,10 @@ from api.schemas import (
     SummarizeRequest,
     SummarizeResponse,
 )
+from src.features.engineering import load_features
 from src.llm.agent import LogAgent
+from src.models.active_learner import ActiveLearner
+from src.models.evaluator import evaluate
 
 
 pipeline = AnomalyPipeline()
@@ -114,14 +118,10 @@ async def summarize(request: SummarizeRequest):
 async def retrain(request: RetrainRequest):
     """Retrain using LightGBM on LLM-generated labels (active learning)."""
     import time
-    from pathlib import Path
 
     import numpy as np
 
     from src.data.preprocessor import train_test_split_temporal
-    from src.features.engineering import load_features
-    from src.models.active_learner import ActiveLearner, encode_llm_labels
-    from src.models.evaluator import evaluate
 
     FEATURES_PATH = Path("data/processed/features_train.parquet")
     LABELS_PATH = Path("data/labels/llm_confirmed.parquet")
@@ -214,11 +214,8 @@ async def delete_agent_session(session_id: str):
 @app.get("/model/health", response_model=ModelHealthResponse)
 async def model_health():
     """Report model version, drift score, and whether re-training is recommended."""
-    from pathlib import Path
-
     import pandas as pd
 
-    from src.features.engineering import load_features
     from src.monitoring.drift_detector import DriftDetector
 
     FEATURES_PATH = Path("data/processed/features_train.parquet")
