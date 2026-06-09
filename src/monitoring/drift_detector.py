@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from evidently import Report
-from evidently.presets import DataDriftPreset
 
 
 @dataclass
@@ -41,6 +39,9 @@ class DriftDetector:
 
     def detect(self, current_df: pd.DataFrame) -> DriftReport:
         """Compute drift between current data and the reference distribution."""
+        from evidently import Report  # noqa: PLC0415
+        from evidently.presets import DataDriftPreset  # noqa: PLC0415
+
         if self._reference is None:
             raise RuntimeError("Call fit_reference() before detect().")
 
@@ -74,6 +75,9 @@ class DriftDetector:
         self, current_df: pd.DataFrame, path: str | Path
     ) -> DriftReport:
         """Run drift detection and save the HTML report. Returns the DriftReport."""
+        from evidently import Report  # noqa: PLC0415
+        from evidently.presets import DataDriftPreset  # noqa: PLC0415
+
         if self._reference is None:
             raise RuntimeError("Call fit_reference() before generate_html_report_from_data().")
 
