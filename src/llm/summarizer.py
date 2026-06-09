@@ -135,20 +135,38 @@ def build_anomaly_context(
 
 
 def _parse_json_response(content: str) -> dict[str, Any]:
-    """Extract JSON from LLM response, handling markdown code blocks."""
-    # Strip markdown code fences if present
+    """Extract JSON from LLM response.
+
+    llama3.2 sometimes wraps JSON in markdown fences or adds preamble text.
+    We try several strategies before giving up.
+    """
     cleaned = content.strip()
+
+    # 1. Strip markdown code fences
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        cleaned = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+        cleaned = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        cleaned = cleaned.strip()
 
+    # 2. Try direct parse
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        # LLM returned malformed JSON — return safe fallback with raw text
-        return {
-            "resumen": cleaned[:200],
-            "severidad": "UNKNOWN",
-            "causa_probable": "Could not parse LLM response",
-            "accion_recomendada": "Review logs manually",
-        }
+        pass
+
+    # 3. Extract first {...} block from the response (handles preamble/postamble text)
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    # 4. Nothing worked — return raw text so at least resumen is visible
+    return {
+        "resumen": cleaned[:300],
+        "severidad": "UNKNOWN",
+        "causa_probable": "Could not parse LLM response as JSON",
+        "accion_recomendada": "Review logs manually",
+    }
