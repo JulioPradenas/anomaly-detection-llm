@@ -24,6 +24,7 @@ dependencies = [
     "lightgbm>=4.6.0",
     "mlflow>=3.13.0",
     "langchain-community>=0.4.2",
+    "evidently>=0.7.21",
 ]
 
 [project.optional-dependencies]

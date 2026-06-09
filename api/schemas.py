@@ -71,6 +71,15 @@ class AgentChatResponse(BaseModel):
     session_id: str
 
 
+class ModelHealthResponse(BaseModel):
+    model_version: str
+    last_trained: str
+    drift_score: float
+    drift_detected: bool
+    features_drifted: list[str]
+    recommendation: str
+
+
 class RetrainRequest(BaseModel):
     use_llm_labels: bool = True
     min_samples: int = Field(default=100, ge=10)

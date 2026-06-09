@@ -11,6 +11,7 @@ from api.schemas import (
     DetectRequest,
     DetectResponse,
     HealthResponse,
+    ModelHealthResponse,
     RetrainRequest,
     RetrainResponse,
     SummarizeRequest,
@@ -208,3 +209,54 @@ async def delete_agent_session(session_id: str):
     """Clear conversation history for a session."""
     existed = agent.clear_session(session_id)
     return {"session_id": session_id, "cleared": existed}
+
+
+@app.get("/model/health", response_model=ModelHealthResponse)
+async def model_health():
+    """Report model version, drift score, and whether re-training is recommended."""
+    from pathlib import Path
+
+    import pandas as pd
+
+    from src.features.engineering import load_features
+    from src.monitoring.drift_detector import DriftDetector
+
+    FEATURES_PATH = Path("data/processed/features_train.parquet")
+    LOF_PATH = Path("models/saved/lof_v1.joblib")
+
+    if not FEATURES_PATH.exists():
+        return ModelHealthResponse(
+            model_version="lof_v1",
+            last_trained="unknown",
+            drift_score=0.0,
+            drift_detected=False,
+            features_drifted=[],
+            recommendation="Features not found — run notebook 02 first.",
+        )
+
+    feat_df = load_features(FEATURES_PATH)
+    feature_cols = [c for c in feat_df.columns if c not in {"timestamp", "node", "is_anomaly"}]
+    n = len(feat_df)
+    split = int(n * 0.8)
+    reference_df = feat_df.iloc[:split][feature_cols].fillna(0)
+    current_df = feat_df.iloc[split:][feature_cols].fillna(0)
+
+    detector = DriftDetector()
+    detector.fit_reference(reference_df)
+    report = detector.detect(current_df)
+
+    last_trained = "unknown"
+    if LOF_PATH.exists():
+        import datetime
+
+        mtime = LOF_PATH.stat().st_mtime
+        last_trained = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+
+    return ModelHealthResponse(
+        model_version="lof_v1",
+        last_trained=last_trained,
+        drift_score=report.drift_score,
+        drift_detected=report.drift_detected,
+        features_drifted=report.features_drifted,
+        recommendation=report.recommendation,
+    )
