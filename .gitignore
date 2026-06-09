@@ -1,0 +1,28 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+coverage.xml
+.coverage
+
+# Dataset (demasiado grande para git)
+data/raw/BGL.log
+data/raw/BGL.zip
+data/processed/*.parquet
+
+# Modelos entrenados
+models/saved/*.joblib
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Outputs
+reports/figures/*.png
+reports/figures/*.pdf
+
+# macOS
+.DS_Store
