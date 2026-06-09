@@ -30,7 +30,7 @@ class LogSummarizer:
     def __init__(self, model: str = "llama3.2", base_url: str = "http://localhost:11434"):
         self.model = model
         self.base_url = base_url
-        self._chain = None
+        self._chain: Any | None = None
         self._available = False
         self._init_chain()
 
@@ -64,7 +64,7 @@ class LogSummarizer:
             Dict with keys: resumen, severidad, causa_probable,
                 accion_recomendada, response_time_ms.
         """
-        if not self._available:
+        if not self._available or self._chain is None:
             return dict(_FALLBACK_RESPONSE)
 
         t0 = time.monotonic()
