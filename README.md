@@ -7,8 +7,11 @@
 ![F1 LOF](https://img.shields.io/badge/F1%20LOF-0.947-success)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 ![Estado](https://img.shields.io/badge/Estado-Producci%C3%B3n%20Listo-green)
+[![Live Demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://anomaly-detection-llm.streamlit.app/)
 
-Sistema end-to-end de detección de anomalías en logs de infraestructura IT, con un LLM local que interpreta cada alerta en lenguaje natural — simulando el flujo real de trabajo en plataformas como Splunk + NOC operations.
+Sistema end-to-end de detección de anomalías en logs de infraestructura IT, con un LLM que interpreta cada alerta en lenguaje natural — simulando el flujo real de trabajo en plataformas como Splunk + NOC operations.
+
+**Demo en vivo:** https://anomaly-detection-llm.streamlit.app/ — dashboard NOC con datos reales del holdout (F1=0.947), Live Monitor y agente LLM (Groq). El LLM corre 100% local con Ollama; el demo público usa Groq.
 
 **Dataset:** BGL (Blue Gene/L) — 4.7M eventos reales de un supercomputador IBM  
 **Stack V1:** LOF + DuckDB + LangChain + Ollama/llama3.2 + FastAPI + Streamlit  
