@@ -6,14 +6,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import numpy as np
+import time
+import uuid
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-
-import time
-import uuid
 
 from src.data.loader import load_bgl_logs
 from src.data.preprocessor import add_severity_score, train_test_split_temporal
@@ -60,10 +59,10 @@ SEVERITY_COLORS = {
 
 # KPI card gradients (matching image: blue / teal / purple / red)
 KPI_GRADIENTS = [
-    ("135deg, #4361ee 0%, #3a0ca3 100%", "#fff"),   # Total events — blue
-    ("135deg, #2ec4b6 0%, #0096a0 100%", "#fff"),   # Anomalías — teal
-    ("135deg, #7c3aed 0%, #4c1d95 100%", "#fff"),   # Tasa — purple
-    ("135deg, #ef233c 0%, #b5001e 100%", "#fff"),   # Critical — red
+    ("135deg, #4361ee 0%, #3a0ca3 100%", "#fff"),  # Total events — blue
+    ("135deg, #2ec4b6 0%, #0096a0 100%", "#fff"),  # Anomalías — teal
+    ("135deg, #7c3aed 0%, #4c1d95 100%", "#fff"),  # Tasa — purple
+    ("135deg, #ef233c 0%, #b5001e 100%", "#fff"),  # Critical — red
 ]
 
 PLOTLY_TEMPLATE = "simple_white"
@@ -494,14 +493,16 @@ def render_live_monitor() -> None:
         feed_ph = st.empty()
         if st.session_state.live_buffer:
             feed_df = pd.DataFrame(st.session_state.live_buffer[::-1])
-            feed_df["Tipo"] = feed_df["is_anomaly"].map(
-                {True: "🔴 Anomalía", False: "🟢 Normal"}
-            )
+            feed_df["Tipo"] = feed_df["is_anomaly"].map({True: "🔴 Anomalía", False: "🟢 Normal"})
             feed_df["Score"] = feed_df["anomaly_score"].apply(lambda x: f"{x:.3f}")
             feed_ph.dataframe(
                 feed_df[["timestamp", "node", "level", "component", "Tipo", "Score"]].rename(
-                    columns={"timestamp": "Timestamp", "node": "Nodo",
-                             "level": "Level", "component": "Componente"}
+                    columns={
+                        "timestamp": "Timestamp",
+                        "node": "Nodo",
+                        "level": "Level",
+                        "component": "Componente",
+                    }
                 ),
                 use_container_width=True,
                 height=380,
@@ -528,29 +529,29 @@ def render_live_monitor() -> None:
                 <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.9rem">
                   <span style="background:{accent};color:#fff;font-weight:700;font-size:0.7rem;
                     padding:0.2rem 0.65rem;border-radius:20px;letter-spacing:.07em">{sev}</span>
-                  <span style="color:#718096;font-size:0.8rem">{last.get('node','')}</span>
+                  <span style="color:#718096;font-size:0.8rem">{last.get("node", "")}</span>
                 </div>
                 <div style="display:grid;gap:0.65rem;font-size:0.85rem">
                   <div>
                     <div style="color:#a0aec0;font-size:0.67rem;font-weight:700;text-transform:uppercase;
                       letter-spacing:.08em;margin-bottom:0.15rem">Resumen</div>
-                    <div style="color:#2d3748;line-height:1.45">{mock['resumen']}</div>
+                    <div style="color:#2d3748;line-height:1.45">{mock["resumen"]}</div>
                   </div>
                   <div>
                     <div style="color:#a0aec0;font-size:0.67rem;font-weight:700;text-transform:uppercase;
                       letter-spacing:.08em;margin-bottom:0.15rem">Causa probable</div>
-                    <div style="color:#2d3748;line-height:1.45">{mock['causa_probable']}</div>
+                    <div style="color:#2d3748;line-height:1.45">{mock["causa_probable"]}</div>
                   </div>
                   <div>
                     <div style="color:#a0aec0;font-size:0.67rem;font-weight:700;text-transform:uppercase;
                       letter-spacing:.08em;margin-bottom:0.15rem">Acción recomendada</div>
-                    <div style="color:#2d3748;line-height:1.45">{mock['accion_recomendada']}</div>
+                    <div style="color:#2d3748;line-height:1.45">{mock["accion_recomendada"]}</div>
                   </div>
                 </div>
                 <div style="margin-top:0.8rem;padding-top:0.6rem;border-top:1px solid #e8ecf4;
                   color:#a0aec0;font-size:0.73rem">
-                  Score: <b style="color:#718096">{last.get('anomaly_score', 0):.3f}</b>
-                  &nbsp;·&nbsp; {last.get('timestamp','')}
+                  Score: <b style="color:#718096">{last.get("anomaly_score", 0):.3f}</b>
+                  &nbsp;·&nbsp; {last.get("timestamp", "")}
                 </div>
                 </div>""",
                 unsafe_allow_html=True,
@@ -586,9 +587,27 @@ def render_agent_chat() -> None:
     )
 
     agent = load_agent()
+    using_groq = bool(os.environ.get("GROQ_API_KEY"))
     if not agent.is_available:
-        st.warning("Ollama no disponible. Inicia el servidor: `ollama serve` y `ollama pull llama3.2`.")
+        if using_groq:
+            st.warning(
+                "No se pudo conectar con Groq. Revisa que `GROQ_API_KEY` en "
+                "Settings → Secrets sea válida. Si la acabas de agregar, pulsa Reintentar."
+            )
+        else:
+            st.warning(
+                "LLM no disponible. **Local:** `ollama serve` + `ollama pull llama3.2`. "
+                "**Cloud:** agrega `GROQ_API_KEY` en Settings → Secrets."
+            )
+        if st.button("Reintentar conexión"):
+            load_agent.clear()
+            load_summarizer.clear()
+            st.rerun()
         return
+
+    st.caption(
+        f"LLM activo: {'Groq · ' + os.environ.get('GROQ_MODEL', 'llama-3.1-8b-instant') if using_groq else 'Ollama · llama3.2'}"
+    )
 
     if "agent_session_id" not in st.session_state:
         st.session_state.agent_session_id = f"noc-{uuid.uuid4().hex[:8]}"
@@ -623,9 +642,7 @@ def render_agent_chat() -> None:
             st.markdown(prompt)
         with st.chat_message("assistant"):
             with st.spinner("El agente está investigando (llama3.2 puede tardar ~10-30s)..."):
-                result = agent.chat(
-                    message=prompt, session_id=st.session_state.agent_session_id
-                )
+                result = agent.chat(message=prompt, session_id=st.session_state.agent_session_id)
             st.markdown(result["response"])
             if result["tools_used"]:
                 st.caption("Herramientas usadas: " + ", ".join(result["tools_used"]))
@@ -736,20 +753,20 @@ def _assign_severity(score: float) -> str:
 
 df_pred["severidad"] = df_pred["anomaly_score"].apply(_assign_severity)
 
-anomalies = df_pred[
-    df_pred["is_predicted_anomaly"] & (df_pred["anomaly_score"] >= score_threshold)
-]
+anomalies = df_pred[df_pred["is_predicted_anomaly"] & (df_pred["anomaly_score"] >= score_threshold)]
 if severity_filter:
     anomalies = anomalies[anomalies["severidad"].isin(severity_filter)]
 
 # ── Tab 1: Overview ───────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Resumen en tiempo real",
-    "Panel de Alertas",
-    "Análisis de Modelos",
-    "Live Monitor",
-    "Agente NOC",
-])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    [
+        "Resumen en tiempo real",
+        "Panel de Alertas",
+        "Análisis de Modelos",
+        "Live Monitor",
+        "Agente NOC",
+    ]
+)
 
 with tab1:
     total_ev = len(df_pred)
@@ -767,34 +784,51 @@ with tab1:
     cols = st.columns(4)
     for col, (label, value, subtitle, gradient, text_color) in zip(cols, kpi_data):
         with col:
-            st.markdown(_kpi_card(label, value, subtitle, gradient, text_color), unsafe_allow_html=True)
+            st.markdown(
+                _kpi_card(label, value, subtitle, gradient, text_color), unsafe_allow_html=True
+            )
 
     st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
 
-    df_ts = df_pred.set_index("timestamp").resample("1h")["is_predicted_anomaly"].agg(
-        anomalias="sum", total="count"
+    df_ts = (
+        df_pred.set_index("timestamp")
+        .resample("1h")["is_predicted_anomaly"]
+        .agg(anomalias="sum", total="count")
     )
     df_ts["normales"] = df_ts["total"] - df_ts["anomalias"]
 
     fig_ts = go.Figure()
-    fig_ts.add_trace(go.Scatter(
-        x=df_ts.index, y=df_ts["normales"],
-        fill="tozeroy", name="Normal",
-        line=dict(color="#4361ee", width=2),
-        fillcolor="rgba(67,97,238,0.08)",
-    ))
-    fig_ts.add_trace(go.Scatter(
-        x=df_ts.index, y=df_ts["anomalias"],
-        fill="tozeroy", name="Anomalía",
-        line=dict(color="#ef233c", width=2),
-        fillcolor="rgba(239,35,60,0.12)",
-    ))
-    _ax = dict(gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR))
+    fig_ts.add_trace(
+        go.Scatter(
+            x=df_ts.index,
+            y=df_ts["normales"],
+            fill="tozeroy",
+            name="Normal",
+            line=dict(color="#4361ee", width=2),
+            fillcolor="rgba(67,97,238,0.08)",
+        )
+    )
+    fig_ts.add_trace(
+        go.Scatter(
+            x=df_ts.index,
+            y=df_ts["anomalias"],
+            fill="tozeroy",
+            name="Anomalía",
+            line=dict(color="#ef233c", width=2),
+            fillcolor="rgba(239,35,60,0.12)",
+        )
+    )
+    _ax = dict(
+        gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)
+    )
     fig_ts.update_layout(
         template=PLOTLY_TEMPLATE,
         paper_bgcolor=CHART_BG,
         plot_bgcolor=CHART_BG,
-        title=dict(text="Serie temporal — eventos normales vs anomalías", font=dict(size=13, color=FONT_COLOR)),
+        title=dict(
+            text="Serie temporal — eventos normales vs anomalías",
+            font=dict(size=13, color=FONT_COLOR),
+        ),
         xaxis=dict(title="Fecha", showgrid=True, **_ax),
         yaxis=dict(title="Eventos/hora", showgrid=True, **_ax),
         height=310,
@@ -825,7 +859,9 @@ with tab1:
             title_font=dict(size=13, color=FONT_COLOR),
             xaxis=dict(tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
             yaxis=dict(tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
-            coloraxis_colorbar=dict(tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            coloraxis_colorbar=dict(
+                tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)
+            ),
             hoverlabel=HOVER_LABEL,
         )
         st.plotly_chart(fig_heat, use_container_width=True)
@@ -834,6 +870,7 @@ with tab1:
     st.markdown("---")
     with st.expander("Estado del modelo — Drift Detection", expanded=False):
         if ACTIVE_FEATURES_PATH.exists():
+
             @st.cache_data(show_spinner=False, ttl=300)
             def _compute_drift() -> dict | None:
                 try:
@@ -903,21 +940,24 @@ with tab2:
         st.info("No hay alertas con los filtros actuales.")
     else:
         display_df = anomalies.sort_values("anomaly_score", ascending=False).head(200).copy()
-        display_df["Severidad"] = display_df["severidad"].map({
-            "LOW": "🟢 LOW",
-            "MEDIUM": "🟡 MEDIUM",
-            "HIGH": "🟠 HIGH",
-            "CRITICAL": "🔴 CRITICAL",
-        })
+        display_df["Severidad"] = display_df["severidad"].map(
+            {
+                "LOW": "🟢 LOW",
+                "MEDIUM": "🟡 MEDIUM",
+                "HIGH": "🟠 HIGH",
+                "CRITICAL": "🔴 CRITICAL",
+            }
+        )
 
         st.dataframe(
-            display_df[["timestamp", "node", "anomaly_score", "Severidad", "is_anomaly"]]
-            .rename(columns={
-                "timestamp": "Timestamp",
-                "node": "Nodo",
-                "anomaly_score": "Score",
-                "is_anomaly": "Real",
-            }),
+            display_df[["timestamp", "node", "anomaly_score", "Severidad", "is_anomaly"]].rename(
+                columns={
+                    "timestamp": "Timestamp",
+                    "node": "Nodo",
+                    "anomaly_score": "Score",
+                    "is_anomaly": "Real",
+                }
+            ),
             use_container_width=True,
             height=360,
         )
@@ -933,11 +973,25 @@ with tab2:
         fig_scores.update_layout(
             paper_bgcolor="#ffffff",
             plot_bgcolor="#ffffff",
-            xaxis=dict(title="Score", gridcolor=GRID_COLOR, showgrid=True, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
-            yaxis=dict(title="Cantidad", gridcolor=GRID_COLOR, showgrid=True, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            xaxis=dict(
+                title="Score",
+                gridcolor=GRID_COLOR,
+                showgrid=True,
+                tickfont=dict(color=FONT_COLOR),
+                title_font=dict(color=FONT_COLOR),
+            ),
+            yaxis=dict(
+                title="Cantidad",
+                gridcolor=GRID_COLOR,
+                showgrid=True,
+                tickfont=dict(color=FONT_COLOR),
+                title_font=dict(color=FONT_COLOR),
+            ),
             height=300,
             margin=dict(t=45, b=70, l=40, r=20),
-            legend=dict(orientation="h", y=-0.22, x=0.5, xanchor="center", font=dict(color=FONT_COLOR)),
+            legend=dict(
+                orientation="h", y=-0.22, x=0.5, xanchor="center", font=dict(color=FONT_COLOR)
+            ),
             font=dict(color=FONT_COLOR),
             title_font=dict(size=13, color=FONT_COLOR),
             hoverlabel=HOVER_LABEL,
@@ -947,7 +1001,9 @@ with tab2:
     # ── LLM on-demand ─────────────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("Análisis LLM — on demand")
-    st.caption("Selecciona una anomalía para que llama3.2 genere un diagnóstico en lenguaje natural.")
+    st.caption(
+        "Selecciona una anomalía para que llama3.2 genere un diagnóstico en lenguaje natural."
+    )
 
     top_for_llm = anomalies.nlargest(20, "anomaly_score").reset_index(drop=True)
 
@@ -978,11 +1034,20 @@ with tab2:
             summarizer = load_summarizer()
 
             if not summarizer.is_available:
-                st.warning("Ollama no disponible. Inicia el servidor con: `ollama serve`")
+                if os.environ.get("GROQ_API_KEY"):
+                    st.warning(
+                        "No se pudo conectar con Groq. Revisa `GROQ_API_KEY` en Settings → Secrets."
+                    )
+                else:
+                    st.warning(
+                        "LLM no disponible. Local: `ollama serve`. Cloud: agrega `GROQ_API_KEY`."
+                    )
             elif window.empty:
                 st.warning("No se encontraron logs en la ventana temporal ±5min para este evento.")
             else:
-                with st.spinner(f"llama3.2 analizando {node} — {len(window)} eventos en ventana..."):
+                with st.spinner(
+                    f"llama3.2 analizando {node} — {len(window)} eventos en ventana..."
+                ):
                     context = build_anomaly_context(
                         df_window=window,
                         anomaly_score=score_val,
@@ -1023,15 +1088,15 @@ with tab2:
   <div style="display:grid;gap:0.8rem">
     <div>
       <div style="color:#a0aec0;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem">Resumen</div>
-      <div style="color:#2d3748;font-size:0.92rem;line-height:1.5">{result.get("resumen","N/A")}</div>
+      <div style="color:#2d3748;font-size:0.92rem;line-height:1.5">{result.get("resumen", "N/A")}</div>
     </div>
     <div>
       <div style="color:#a0aec0;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem">Causa probable</div>
-      <div style="color:#2d3748;font-size:0.92rem;line-height:1.5">{result.get("causa_probable","N/A")}</div>
+      <div style="color:#2d3748;font-size:0.92rem;line-height:1.5">{result.get("causa_probable", "N/A")}</div>
     </div>
     <div>
       <div style="color:#a0aec0;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem">Acción recomendada</div>
-      <div style="color:#2d3748;font-size:0.92rem;line-height:1.5">{result.get("accion_recomendada","N/A")}</div>
+      <div style="color:#2d3748;font-size:0.92rem;line-height:1.5">{result.get("accion_recomendada", "N/A")}</div>
     </div>
   </div>
   <div style="margin-top:1rem;padding-top:0.7rem;border-top:1px solid #e8ecf4;color:#a0aec0;font-size:0.76rem">
@@ -1052,33 +1117,55 @@ with tab3:
 
     with col1:
         normal_scores = df_pred.loc[~df_pred["is_anomaly"], "anomaly_score"]
-        anom_scores   = df_pred.loc[df_pred["is_anomaly"],  "anomaly_score"]
+        anom_scores = df_pred.loc[df_pred["is_anomaly"], "anomaly_score"]
 
         fig_dist = go.Figure()
-        fig_dist.add_trace(go.Histogram(
-            x=normal_scores,
-            name=f"Normal ({len(normal_scores):,})",
-            opacity=0.75,
-            marker=dict(color="#4361ee", line=dict(width=0)),
-            nbinsx=50,
-        ))
-        fig_dist.add_trace(go.Histogram(
-            x=anom_scores,
-            name=f"Anomalía ({len(anom_scores):,})",
-            opacity=0.65,
-            marker=dict(color="#ef233c", line=dict(width=0)),
-            nbinsx=50,
-        ))
+        fig_dist.add_trace(
+            go.Histogram(
+                x=normal_scores,
+                name=f"Normal ({len(normal_scores):,})",
+                opacity=0.75,
+                marker=dict(color="#4361ee", line=dict(width=0)),
+                nbinsx=50,
+            )
+        )
+        fig_dist.add_trace(
+            go.Histogram(
+                x=anom_scores,
+                name=f"Anomalía ({len(anom_scores):,})",
+                opacity=0.65,
+                marker=dict(color="#ef233c", line=dict(width=0)),
+                nbinsx=50,
+            )
+        )
         fig_dist.update_layout(
             barmode="overlay",
             paper_bgcolor="#ffffff",
             plot_bgcolor="#ffffff",
-            title=dict(text="Distribución de scores — Normal vs Anomalía (escala log)", font=dict(size=13, color=FONT_COLOR)),
-            xaxis=dict(title="Anomaly score (normalizado)", gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR), showgrid=True),
-            yaxis=dict(title="Cantidad (log)", type="log", gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR), showgrid=True),
+            title=dict(
+                text="Distribución de scores — Normal vs Anomalía (escala log)",
+                font=dict(size=13, color=FONT_COLOR),
+            ),
+            xaxis=dict(
+                title="Anomaly score (normalizado)",
+                gridcolor=GRID_COLOR,
+                tickfont=dict(color=FONT_COLOR),
+                title_font=dict(color=FONT_COLOR),
+                showgrid=True,
+            ),
+            yaxis=dict(
+                title="Cantidad (log)",
+                type="log",
+                gridcolor=GRID_COLOR,
+                tickfont=dict(color=FONT_COLOR),
+                title_font=dict(color=FONT_COLOR),
+                showgrid=True,
+            ),
             height=320,
             margin=dict(t=50, b=60, l=50, r=20),
-            legend=dict(orientation="h", y=-0.22, x=0.5, xanchor="center", font=dict(color=FONT_COLOR)),
+            legend=dict(
+                orientation="h", y=-0.22, x=0.5, xanchor="center", font=dict(color=FONT_COLOR)
+            ),
             font=dict(color=FONT_COLOR),
             hoverlabel=HOVER_LABEL,
         )
@@ -1104,8 +1191,17 @@ with tab3:
             template=PLOTLY_TEMPLATE,
             paper_bgcolor=CHART_BG,
             plot_bgcolor=CHART_BG,
-            xaxis=dict(gridcolor=GRID_COLOR, tickangle=45, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
-            yaxis=dict(gridcolor=GRID_COLOR, tickfont=dict(color=FONT_COLOR), title_font=dict(color=FONT_COLOR)),
+            xaxis=dict(
+                gridcolor=GRID_COLOR,
+                tickangle=45,
+                tickfont=dict(color=FONT_COLOR),
+                title_font=dict(color=FONT_COLOR),
+            ),
+            yaxis=dict(
+                gridcolor=GRID_COLOR,
+                tickfont=dict(color=FONT_COLOR),
+                title_font=dict(color=FONT_COLOR),
+            ),
             height=320,
             margin=dict(t=50, b=60, l=30, r=20),
             coloraxis_showscale=False,
