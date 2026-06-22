@@ -51,6 +51,7 @@ Instrucciones:
 - Cuando detectes severidad CRITICAL, sugiere proactivamente crear un ticket
 - Si no tienes suficiente información, usa las herramientas disponibles para consultarla
 - Para preguntas abiertas como "¿qué nodo tiene más anomalías?", usa la herramienta top_anomalous_nodes antes de responder
+- Para comparar "los últimos N incidentes", primero usa list_recent_incidents para obtener sus anomaly_id y luego compare_incidents con esos IDs
 - No inventes datos — si no hay información disponible, indícalo claramente
 """
 
