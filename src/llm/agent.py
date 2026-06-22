@@ -136,7 +136,9 @@ class LogAgent:
             if "node" not in df.columns:
                 return "Historial no contiene columna 'node'."
             counts = df["node"].value_counts().head(limit)
-            lines = [f"{i + 1}. {node} — {n} anomalías" for i, (node, n) in enumerate(counts.items())]
+            lines = [
+                f"{i + 1}. {node} — {n} anomalías" for i, (node, n) in enumerate(counts.items())
+            ]
             return "Nodos con más anomalías:\n" + "\n".join(lines)
 
         @tool

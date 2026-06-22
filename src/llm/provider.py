@@ -29,10 +29,10 @@ def get_chat_model(
     if using_groq():
         from langchain_groq import ChatGroq
 
+        # ChatGroq reads GROQ_API_KEY from the environment automatically.
         return ChatGroq(
             model=os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL),
             temperature=temperature,
-            api_key=os.environ["GROQ_API_KEY"],
         )
 
     from langchain_ollama import ChatOllama
