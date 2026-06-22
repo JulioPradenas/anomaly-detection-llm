@@ -142,6 +142,24 @@ class LogAgent:
             return "Nodos con más anomalías:\n" + "\n".join(lines)
 
         @tool
+        def list_recent_incidents(limit: int = 5) -> str:
+            """Lista los incidentes más recientes con su anomaly_id, nodo y severidad.
+            Úsalo cuando pidan 'los últimos N incidentes' o antes de comparar
+            incidentes (compare_incidents necesita los anomaly_id de aquí)."""
+            if not labels_path.exists():
+                return "Sin historial disponible (ejecuta notebook 06 o genera los labels primero)."
+            df = pd.read_parquet(labels_path)
+            if "anomaly_id" not in df.columns or "timestamp" not in df.columns:
+                return "El historial no contiene anomaly_id/timestamp para listar incidentes."
+            recent = df.sort_values("timestamp", ascending=False).head(limit)
+            lines = [
+                f"{i + 1}. id={r['anomaly_id']} | nodo={r.get('node', 'N/A')} | "
+                f"severidad={r.get('severidad', 'N/A')} | {r['timestamp']}"
+                for i, (_, r) in enumerate(recent.iterrows())
+            ]
+            return "Incidentes más recientes:\n" + "\n".join(lines)
+
+        @tool
         def get_anomaly_details(anomaly_id: str) -> str:
             """Retorna detalles completos de una anomalía específica por su ID."""
             if not labels_path.exists():
@@ -202,6 +220,7 @@ class LogAgent:
         return [
             query_anomaly_history,
             top_anomalous_nodes,
+            list_recent_incidents,
             get_anomaly_details,
             compare_incidents,
             create_mock_ticket,
