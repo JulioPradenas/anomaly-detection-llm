@@ -1,5 +1,6 @@
 """Streamlit NOC-style dashboard for IT log anomaly detection."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -12,13 +13,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import time
+import uuid
 
 from src.data.loader import load_bgl_logs
 from src.data.preprocessor import add_severity_score, train_test_split_temporal
 from src.features.engineering import build_features, load_features
+from src.llm.agent import LogAgent
 from src.llm.summarizer import LogSummarizer, build_anomaly_context
 from src.models.detector import AnomalyDetector
-from src.monitoring.drift_detector import DriftDetector
 from src.streaming.event_generator import MOCK_SUMMARIES, EventGenerator
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -32,6 +34,21 @@ DATA_PATH = Path("data/raw/BGL.log")
 FEATURES_PATH = Path("data/processed/features_train.parquet")
 MODEL_PATH = Path("models/saved/lof_v1.joblib")
 N_ROWS_DEMO = 500_000
+
+# Precomputed sample for the public cloud demo (no BGL.log / model / Ollama there)
+SAMPLE_DIR = Path("data/sample")
+SAMPLE_PRED = SAMPLE_DIR / "predictions.parquet"
+SAMPLE_RAW = SAMPLE_DIR / "raw_logs.parquet"
+SAMPLE_FEATURES = SAMPLE_DIR / "features.parquet"
+
+# On Streamlit Cloud the LLM runs via Groq — expose the secret as an env var so
+# the provider helper (src/llm/provider.py) picks it up. Harmless locally.
+for _key in ("GROQ_API_KEY", "GROQ_MODEL"):
+    try:
+        if _key in st.secrets and _key not in os.environ:
+            os.environ[_key] = str(st.secrets[_key])
+    except Exception:
+        pass
 
 SEVERITY_COLORS = {
     "LOW": "#06d6a0",
@@ -168,6 +185,26 @@ h2, h3 {
     font-weight: 600 !important;
     font-size: 0.88rem !important;
 }
+/* Secondary buttons — dark text on white, visible border (was inheriting theme defaults) */
+.stButton > button[kind="secondary"],
+.stButton > button:not([kind="primary"]) {
+    background: #ffffff !important;
+    color: #1e2d40 !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: 0 1px 3px rgba(30,45,64,0.08) !important;
+}
+.stButton > button[kind="secondary"] *,
+.stButton > button:not([kind="primary"]) * {
+    color: #1e2d40 !important;
+}
+.stButton > button[kind="secondary"]:hover,
+.stButton > button:not([kind="primary"]):hover {
+    border-color: #4361ee !important;
+    color: #4361ee !important;
+}
+.stButton > button[kind="secondary"]:hover * {
+    color: #4361ee !important;
+}
 .stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #4361ee 0%, #3a0ca3 100%) !important;
     border: none !important;
@@ -176,9 +213,30 @@ h2, h3 {
     box-shadow: 0 4px 14px rgba(67,97,238,0.35) !important;
     transition: box-shadow 0.2s, transform 0.1s !important;
 }
+.stButton > button[kind="primary"] * {
+    color: white !important;
+}
 .stButton > button[kind="primary"]:hover {
     box-shadow: 0 6px 20px rgba(67,97,238,0.5) !important;
     transform: translateY(-1px) !important;
+}
+
+/* ── Chat (agente) — texto oscuro sobre claro ── */
+[data-testid="stChatInput"] textarea,
+[data-testid="stChatInput"] input {
+    color: #2d3748 !important;
+    background: #ffffff !important;
+}
+[data-testid="stChatInput"] textarea::placeholder {
+    color: #94a3b8 !important;
+}
+[data-testid="stChatMessage"] {
+    background: #ffffff !important;
+    border: 1px solid #e8ecf4 !important;
+    border-radius: 12px !important;
+}
+[data-testid="stChatMessage"] * {
+    color: #2d3748 !important;
 }
 
 /* ── Dataframe ── */
@@ -313,9 +371,24 @@ def load_model() -> AnomalyDetector | None:
     return None
 
 
+@st.cache_data(show_spinner="Cargando muestra (demo)...")
+def load_sample_raw() -> pd.DataFrame:
+    return pd.read_parquet(SAMPLE_RAW)
+
+
+@st.cache_data(show_spinner="Cargando predicciones (demo)...")
+def load_sample_predictions() -> pd.DataFrame:
+    return pd.read_parquet(SAMPLE_PRED)
+
+
 @st.cache_resource(show_spinner="Conectando a Ollama...")
 def load_summarizer() -> LogSummarizer:
     return LogSummarizer(model="llama3.2")
+
+
+@st.cache_resource(show_spinner="Inicializando agente NOC...")
+def load_agent() -> LogAgent:
+    return LogAgent(model="llama3.2")
 
 
 @st.cache_data(show_spinner="Generando predicciones...")
@@ -341,6 +414,226 @@ def get_predictions(_df: pd.DataFrame, _model: AnomalyDetector) -> pd.DataFrame:
     return result
 
 
+# ── Live Monitor (works without dataset — synthetic stream) ────────────────────
+def render_live_monitor() -> None:
+    st.subheader("Live Monitor — Streaming de eventos en tiempo real")
+    st.caption("Eventos sintéticos generados a partir de la distribución del dataset BGL.")
+
+    # ── session state init ─────────────────────────────────────────────────
+    if "live_running" not in st.session_state:
+        st.session_state.live_running = False
+    if "live_buffer" not in st.session_state:
+        st.session_state.live_buffer = []
+    if "live_n_events" not in st.session_state:
+        st.session_state.live_n_events = 0
+    if "live_n_anomalies" not in st.session_state:
+        st.session_state.live_n_anomalies = 0
+    if "live_last_anomaly" not in st.session_state:
+        st.session_state.live_last_anomaly = None
+    if "live_generator" not in st.session_state:
+        st.session_state.live_generator = None
+
+    # ── controls ───────────────────────────────────────────────────────────
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1, 1, 3])
+    with ctrl_col1:
+        btn_label = "⏹ Stop" if st.session_state.live_running else "▶ Start"
+        if st.button(btn_label, type="primary", use_container_width=True):
+            st.session_state.live_running = not st.session_state.live_running
+            if st.session_state.live_running and st.session_state.live_generator is None:
+                st.session_state.live_generator = EventGenerator(anomaly_rate=0.05)
+            st.rerun()
+
+    with ctrl_col2:
+        if st.button("💥 Inject Anomaly", use_container_width=True):
+            if st.session_state.live_generator is None:
+                st.session_state.live_generator = EventGenerator(anomaly_rate=0.05)
+            ev = st.session_state.live_generator.inject_anomaly()
+            _buf = st.session_state.live_buffer
+            _buf.append(ev.to_dict())
+            st.session_state.live_buffer = _buf[-50:]
+            st.session_state.live_n_events += 1
+            st.session_state.live_n_anomalies += 1
+            st.session_state.live_last_anomaly = ev.to_dict()
+            st.rerun()
+
+    with ctrl_col3:
+        stream_interval = st.slider(
+            "Velocidad (s/evento)", min_value=0.2, max_value=2.0, value=0.5, step=0.1
+        )
+
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
+    # ── KPIs ───────────────────────────────────────────────────────────────
+    k1, k2, k3, k4 = st.columns(4)
+    n_ev = st.session_state.live_n_events
+    n_an = st.session_state.live_n_anomalies
+    live_rate = n_an / max(n_ev, 1)
+    status_color = "#ef233c" if st.session_state.live_running else "#718096"
+    status_text = "ACTIVO" if st.session_state.live_running else "DETENIDO"
+    k1.metric("Eventos procesados", f"{n_ev:,}")
+    k2.metric("Anomalías detectadas", f"{n_an:,}")
+    k3.metric("Tasa de anomalías", f"{live_rate:.1%}")
+    with k4:
+        st.markdown(
+            f"""<div style="background:#fff;border-radius:14px;padding:1rem 1.5rem;
+            box-shadow:0 2px 12px rgba(30,45,64,0.08);border:1px solid #e8ecf4;
+            display:flex;flex-direction:column;gap:0.3rem">
+            <div style="font-size:0.72rem;color:#718096;font-weight:600;text-transform:uppercase;letter-spacing:.07em">Estado</div>
+            <div style="font-size:1.2rem;font-weight:800;color:{status_color}">{status_text}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
+
+    # ── Event feed + last anomaly panel ───────────────────────────────────
+    feed_col, alert_col = st.columns([3, 2])
+
+    with feed_col:
+        st.markdown("##### Últimos 50 eventos")
+        feed_ph = st.empty()
+        if st.session_state.live_buffer:
+            feed_df = pd.DataFrame(st.session_state.live_buffer[::-1])
+            feed_df["Tipo"] = feed_df["is_anomaly"].map(
+                {True: "🔴 Anomalía", False: "🟢 Normal"}
+            )
+            feed_df["Score"] = feed_df["anomaly_score"].apply(lambda x: f"{x:.3f}")
+            feed_ph.dataframe(
+                feed_df[["timestamp", "node", "level", "component", "Tipo", "Score"]].rename(
+                    columns={"timestamp": "Timestamp", "node": "Nodo",
+                             "level": "Level", "component": "Componente"}
+                ),
+                use_container_width=True,
+                height=380,
+            )
+        else:
+            feed_ph.info("Presiona ▶ Start o 💥 Inject Anomaly para ver eventos.")
+
+    with alert_col:
+        st.markdown("##### Última anomalía detectada")
+        alert_ph = st.empty()
+        last = st.session_state.live_last_anomaly
+        if last:
+            sev = last.get("severity", "HIGH")
+            accent = SEVERITY_COLORS.get(sev, "#adb5bd")
+
+            # Mock LLM summary (rotate through pre-generated)
+            mock_idx = (st.session_state.live_n_anomalies - 1) % len(MOCK_SUMMARIES)
+            mock = MOCK_SUMMARIES[mock_idx]
+
+            alert_ph.markdown(
+                f"""<div style="border-left:5px solid {accent};padding:1.2rem 1.4rem;
+                background:#ffffff;border-radius:12px;box-shadow:0 2px 12px rgba(30,45,64,0.08);
+                border:1px solid #e8ecf4;border-left:5px solid {accent};color:#2d3748">
+                <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.9rem">
+                  <span style="background:{accent};color:#fff;font-weight:700;font-size:0.7rem;
+                    padding:0.2rem 0.65rem;border-radius:20px;letter-spacing:.07em">{sev}</span>
+                  <span style="color:#718096;font-size:0.8rem">{last.get('node','')}</span>
+                </div>
+                <div style="display:grid;gap:0.65rem;font-size:0.85rem">
+                  <div>
+                    <div style="color:#a0aec0;font-size:0.67rem;font-weight:700;text-transform:uppercase;
+                      letter-spacing:.08em;margin-bottom:0.15rem">Resumen</div>
+                    <div style="color:#2d3748;line-height:1.45">{mock['resumen']}</div>
+                  </div>
+                  <div>
+                    <div style="color:#a0aec0;font-size:0.67rem;font-weight:700;text-transform:uppercase;
+                      letter-spacing:.08em;margin-bottom:0.15rem">Causa probable</div>
+                    <div style="color:#2d3748;line-height:1.45">{mock['causa_probable']}</div>
+                  </div>
+                  <div>
+                    <div style="color:#a0aec0;font-size:0.67rem;font-weight:700;text-transform:uppercase;
+                      letter-spacing:.08em;margin-bottom:0.15rem">Acción recomendada</div>
+                    <div style="color:#2d3748;line-height:1.45">{mock['accion_recomendada']}</div>
+                  </div>
+                </div>
+                <div style="margin-top:0.8rem;padding-top:0.6rem;border-top:1px solid #e8ecf4;
+                  color:#a0aec0;font-size:0.73rem">
+                  Score: <b style="color:#718096">{last.get('anomaly_score', 0):.3f}</b>
+                  &nbsp;·&nbsp; {last.get('timestamp','')}
+                </div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+        else:
+            alert_ph.info("Sin anomalías detectadas aún.")
+
+    # ── streaming loop — one event per rerun ──────────────────────────────
+    if st.session_state.live_running:
+        gen = st.session_state.live_generator
+        ev = gen.next_event()
+        ev_dict = ev.to_dict()
+
+        buf = st.session_state.live_buffer
+        buf.append(ev_dict)
+        st.session_state.live_buffer = buf[-50:]
+        st.session_state.live_n_events += 1
+
+        if ev.is_anomaly:
+            st.session_state.live_n_anomalies += 1
+            st.session_state.live_last_anomaly = ev_dict
+
+        time.sleep(stream_interval)
+        st.rerun()
+
+
+# ── Agente NOC (LangGraph + memoria, no requiere dataset) ──────────────────────
+def render_agent_chat() -> None:
+    st.subheader("Agente NOC — investigación conversacional")
+    st.caption(
+        "LangGraph + llama3.2 con memoria por sesión. Herramientas: historial de "
+        "anomalías, detalles, comparación de incidentes y creación de tickets."
+    )
+
+    agent = load_agent()
+    if not agent.is_available:
+        st.warning("Ollama no disponible. Inicia el servidor: `ollama serve` y `ollama pull llama3.2`.")
+        return
+
+    if "agent_session_id" not in st.session_state:
+        st.session_state.agent_session_id = f"noc-{uuid.uuid4().hex[:8]}"
+    if "agent_messages" not in st.session_state:
+        st.session_state.agent_messages = []
+
+    head_col1, head_col2 = st.columns([3, 1])
+    with head_col1:
+        st.caption(f"Sesión activa: `{st.session_state.agent_session_id}`")
+    with head_col2:
+        if st.button("Limpiar conversación", use_container_width=True):
+            agent.clear_session(st.session_state.agent_session_id)
+            st.session_state.agent_messages = []
+            st.session_state.agent_session_id = f"noc-{uuid.uuid4().hex[:8]}"
+            st.rerun()
+
+    if not st.session_state.agent_messages:
+        st.info(
+            "Ejemplos: «¿Qué nodo tiene más anomalías?» · «Crea un ticket para ese nodo» · "
+            "«Compara los dos últimos incidentes». La memoria mantiene el hilo entre preguntas."
+        )
+
+    for m in st.session_state.agent_messages:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+            if m.get("tools"):
+                st.caption("Herramientas usadas: " + ", ".join(m["tools"]))
+
+    if prompt := st.chat_input("Pregunta al agente..."):
+        st.session_state.agent_messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        with st.chat_message("assistant"):
+            with st.spinner("El agente está investigando (llama3.2 puede tardar ~10-30s)..."):
+                result = agent.chat(
+                    message=prompt, session_id=st.session_state.agent_session_id
+                )
+            st.markdown(result["response"])
+            if result["tools_used"]:
+                st.caption("Herramientas usadas: " + ", ".join(result["tools_used"]))
+        st.session_state.agent_messages.append(
+            {"role": "assistant", "content": result["response"], "tools": result["tools_used"]}
+        )
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 st.sidebar.markdown(
     "<h2 style='color:#e2e8f0!important;font-weight:800;font-size:1.1rem;margin:0'>NOC Dashboard</h2>",
@@ -362,27 +655,42 @@ score_threshold = st.sidebar.slider(
     step=0.05,
 )
 
+_llm_label = (
+    f"Groq / {os.environ.get('GROQ_MODEL', 'llama-3.1-8b-instant')}"
+    if os.environ.get("GROQ_API_KEY")
+    else "Ollama / llama3.2"
+)
 st.sidebar.markdown("---")
 st.sidebar.markdown(
-    """<div style='color:#94a3b8;font-size:0.78rem;line-height:1.6'>
+    f"""<div style='color:#94a3b8;font-size:0.78rem;line-height:1.6'>
     <b style='color:#cbd5e1'>Modelo</b><br>Local Outlier Factor<br>
     <b style='color:#cbd5e1'>Dataset</b><br>BGL 4.7M eventos<br>
-    <b style='color:#cbd5e1'>LLM</b><br>Ollama / llama3.2
+    <b style='color:#cbd5e1'>LLM</b><br>{_llm_label}
     </div>""",
     unsafe_allow_html=True,
 )
 
-demo_mode = not DATA_PATH.exists()
-if demo_mode:
+full_mode = DATA_PATH.exists() and MODEL_PATH.exists()
+cloud_mode = (not full_mode) and SAMPLE_PRED.exists() and SAMPLE_RAW.exists()
+demo_mode = not (full_mode or cloud_mode)
+ACTIVE_FEATURES_PATH = FEATURES_PATH if FEATURES_PATH.exists() else SAMPLE_FEATURES
+
+if cloud_mode:
+    st.sidebar.info("Demo en la nube — muestra del holdout (80K eventos)")
+elif demo_mode:
     st.sidebar.warning("Modo demo — dataset no encontrado")
 
 
 def _show_demo_placeholder() -> None:
-    st.markdown("### Demo — estructura del dashboard")
     st.markdown("""
-    **Tab 1 — Resumen en tiempo real:** KPIs, serie temporal, heatmap por nodo
-    **Tab 2 — Panel de Alertas:** tabla de alertas, histograma, análisis LLM on-demand
-    **Tab 3 — Análisis de Modelos:** distribución de scores, top nodos, métricas F1
+    Con el dataset BGL real y el modelo entrenado se habilitan tres pestañas adicionales:
+
+    **Resumen en tiempo real:** KPIs, serie temporal, heatmap por nodo
+    **Panel de Alertas:** tabla de alertas, histograma, análisis LLM on-demand
+    **Análisis de Modelos:** distribución de scores, top nodos, métricas F1
+
+    Mientras tanto, el **Live Monitor** de abajo es totalmente funcional —
+    usa eventos sintéticos generados a partir de la distribución del dataset.
     """)
 
 
@@ -391,18 +699,29 @@ st.title("IT Log Anomaly Detection — NOC Dashboard")
 st.caption("BGL Supercomputer Logs  ·  Local Outlier Factor  ·  LLM Summarizer (Ollama/llama3.2)")
 
 if demo_mode:
-    st.info("Ejecuta `make download-data` y luego los notebooks 01-03 para ver datos reales.")
-    _show_demo_placeholder()
+    st.info(
+        "Modo demo — sin dataset BGL. El Live Monitor funciona con eventos sintéticos. "
+        "Para datos reales: `make download-data` + notebooks 01-03."
+    )
+    demo_tab, agent_tab, info_tab = st.tabs(["Live Monitor", "Agente NOC", "Modo demo — info"])
+    with demo_tab:
+        render_live_monitor()
+    with agent_tab:
+        render_agent_chat()
+    with info_tab:
+        _show_demo_placeholder()
     st.stop()
 
-df_raw = load_data()
-model = load_model()
-
-if model is None:
-    st.error("Modelo no entrenado. Ejecuta el notebook `03_anomaly_detection.ipynb` primero.")
-    st.stop()
-
-df_pred = get_predictions(df_raw, model)
+if cloud_mode:
+    df_raw = load_sample_raw()
+    df_pred = load_sample_predictions()
+else:
+    df_raw = load_data()
+    model = load_model()
+    if model is None:
+        st.error("Modelo no entrenado. Ejecuta el notebook `03_anomaly_detection.ipynb` primero.")
+        st.stop()
+    df_pred = get_predictions(df_raw, model)
 
 
 def _assign_severity(score: float) -> str:
@@ -424,11 +743,12 @@ if severity_filter:
     anomalies = anomalies[anomalies["severidad"].isin(severity_filter)]
 
 # ── Tab 1: Overview ───────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Resumen en tiempo real",
     "Panel de Alertas",
     "Análisis de Modelos",
     "Live Monitor",
+    "Agente NOC",
 ])
 
 with tab1:
@@ -513,10 +833,14 @@ with tab1:
     # ── Drift semaphore ───────────────────────────────────────────────────────
     st.markdown("---")
     with st.expander("Estado del modelo — Drift Detection", expanded=False):
-        if FEATURES_PATH.exists():
+        if ACTIVE_FEATURES_PATH.exists():
             @st.cache_data(show_spinner=False, ttl=300)
-            def _compute_drift() -> dict:
-                feat_df = load_features(FEATURES_PATH)
+            def _compute_drift() -> dict | None:
+                try:
+                    from src.monitoring.drift_detector import DriftDetector
+                except Exception:
+                    return None
+                feat_df = load_features(ACTIVE_FEATURES_PATH)
                 fcols = [c for c in feat_df.columns if c not in {"timestamp", "node", "is_anomaly"}]
                 n = len(feat_df)
                 ref = feat_df.iloc[: int(n * 0.8)][fcols].fillna(0)
@@ -532,6 +856,12 @@ with tab1:
                 }
 
             dr = _compute_drift()
+        else:
+            dr = None
+
+        if dr is None:
+            st.info("Drift no disponible en este entorno (requiere Evidently + features).")
+        else:
             score = dr["score"]
             color = "#06d6a0" if score < 0.15 else ("#f4a261" if score < 0.50 else "#ef233c")
             icon = "🟢" if score < 0.15 else ("🟡" if score < 0.50 else "🔴")
@@ -564,8 +894,6 @@ with tab1:
                         "<div style='color:#06d6a0;font-size:0.82rem'>Sin features drifteadas.</div>",
                         unsafe_allow_html=True,
                     )
-        else:
-            st.info("Features no encontradas — ejecuta notebook 02 para generar drift report.")
 
 # ── Tab 2: Alert panel ────────────────────────────────────────────────────────
 with tab2:
@@ -808,162 +1136,8 @@ with tab3:
 
 # ── Tab 4: Live Monitor ───────────────────────────────────────────────────────
 with tab4:
-    st.subheader("Live Monitor — Streaming de eventos en tiempo real")
-    st.caption("Eventos sintéticos generados a partir de la distribución del dataset BGL.")
+    render_live_monitor()
 
-    # ── session state init ─────────────────────────────────────────────────
-    if "live_running" not in st.session_state:
-        st.session_state.live_running = False
-    if "live_buffer" not in st.session_state:
-        st.session_state.live_buffer = []
-    if "live_n_events" not in st.session_state:
-        st.session_state.live_n_events = 0
-    if "live_n_anomalies" not in st.session_state:
-        st.session_state.live_n_anomalies = 0
-    if "live_last_anomaly" not in st.session_state:
-        st.session_state.live_last_anomaly = None
-    if "live_generator" not in st.session_state:
-        st.session_state.live_generator = None
-
-    # ── controls ───────────────────────────────────────────────────────────
-    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1, 1, 3])
-    with ctrl_col1:
-        btn_label = "⏹ Stop" if st.session_state.live_running else "▶ Start"
-        if st.button(btn_label, type="primary", use_container_width=True):
-            st.session_state.live_running = not st.session_state.live_running
-            if st.session_state.live_running and st.session_state.live_generator is None:
-                st.session_state.live_generator = EventGenerator(anomaly_rate=0.05)
-            st.rerun()
-
-    with ctrl_col2:
-        if st.button("💥 Inject Anomaly", use_container_width=True):
-            if st.session_state.live_generator is None:
-                st.session_state.live_generator = EventGenerator(anomaly_rate=0.05)
-            ev = st.session_state.live_generator.inject_anomaly()
-            _buf = st.session_state.live_buffer
-            _buf.append(ev.to_dict())
-            st.session_state.live_buffer = _buf[-50:]
-            st.session_state.live_n_events += 1
-            st.session_state.live_n_anomalies += 1
-            st.session_state.live_last_anomaly = ev.to_dict()
-            st.rerun()
-
-    with ctrl_col3:
-        stream_interval = st.slider(
-            "Velocidad (s/evento)", min_value=0.2, max_value=2.0, value=0.5, step=0.1
-        )
-
-    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-
-    # ── KPIs ───────────────────────────────────────────────────────────────
-    k1, k2, k3, k4 = st.columns(4)
-    n_ev = st.session_state.live_n_events
-    n_an = st.session_state.live_n_anomalies
-    live_rate = n_an / max(n_ev, 1)
-    status_color = "#ef233c" if st.session_state.live_running else "#718096"
-    status_text = "ACTIVO" if st.session_state.live_running else "DETENIDO"
-    k1.metric("Eventos procesados", f"{n_ev:,}")
-    k2.metric("Anomalías detectadas", f"{n_an:,}")
-    k3.metric("Tasa de anomalías", f"{live_rate:.1%}")
-    with k4:
-        st.markdown(
-            f"""<div style="background:#fff;border-radius:14px;padding:1rem 1.5rem;
-            box-shadow:0 2px 12px rgba(30,45,64,0.08);border:1px solid #e8ecf4;
-            display:flex;flex-direction:column;gap:0.3rem">
-            <div style="font-size:0.72rem;color:#718096;font-weight:600;text-transform:uppercase;letter-spacing:.07em">Estado</div>
-            <div style="font-size:1.2rem;font-weight:800;color:{status_color}">{status_text}</div>
-            </div>""",
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
-
-    # ── Event feed + last anomaly panel ───────────────────────────────────
-    feed_col, alert_col = st.columns([3, 2])
-
-    with feed_col:
-        st.markdown("##### Últimos 50 eventos")
-        feed_ph = st.empty()
-        if st.session_state.live_buffer:
-            feed_df = pd.DataFrame(st.session_state.live_buffer[::-1])
-            feed_df["Tipo"] = feed_df["is_anomaly"].map(
-                {True: "🔴 Anomalía", False: "🟢 Normal"}
-            )
-            feed_df["Score"] = feed_df["anomaly_score"].apply(lambda x: f"{x:.3f}")
-            feed_ph.dataframe(
-                feed_df[["timestamp", "node", "level", "component", "Tipo", "Score"]].rename(
-                    columns={"timestamp": "Timestamp", "node": "Nodo",
-                             "level": "Level", "component": "Componente"}
-                ),
-                use_container_width=True,
-                height=380,
-            )
-        else:
-            feed_ph.info("Presiona ▶ Start o 💥 Inject Anomaly para ver eventos.")
-
-    with alert_col:
-        st.markdown("##### Última anomalía detectada")
-        alert_ph = st.empty()
-        last = st.session_state.live_last_anomaly
-        if last:
-            sev = last.get("severity", "HIGH")
-            accent = SEVERITY_COLORS.get(sev, "#adb5bd")
-
-            # Mock LLM summary (rotate through pre-generated)
-            mock_idx = (st.session_state.live_n_anomalies - 1) % len(MOCK_SUMMARIES)
-            mock = MOCK_SUMMARIES[mock_idx]
-
-            alert_ph.markdown(
-                f"""<div style="border-left:5px solid {accent};padding:1.2rem 1.4rem;
-                background:#ffffff;border-radius:12px;box-shadow:0 2px 12px rgba(30,45,64,0.08);
-                border:1px solid #e8ecf4;border-left:5px solid {accent};color:#2d3748">
-                <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.9rem">
-                  <span style="background:{accent};color:#fff;font-weight:700;font-size:0.7rem;
-                    padding:0.2rem 0.65rem;border-radius:20px;letter-spacing:.07em">{sev}</span>
-                  <span style="color:#718096;font-size:0.8rem">{last.get('node','')}</span>
-                </div>
-                <div style="display:grid;gap:0.65rem;font-size:0.85rem">
-                  <div>
-                    <div style="color:#a0aec0;font-size:0.67rem;font-weight:700;text-transform:uppercase;
-                      letter-spacing:.08em;margin-bottom:0.15rem">Resumen</div>
-                    <div style="color:#2d3748;line-height:1.45">{mock['resumen']}</div>
-                  </div>
-                  <div>
-                    <div style="color:#a0aec0;font-size:0.67rem;font-weight:700;text-transform:uppercase;
-                      letter-spacing:.08em;margin-bottom:0.15rem">Causa probable</div>
-                    <div style="color:#2d3748;line-height:1.45">{mock['causa_probable']}</div>
-                  </div>
-                  <div>
-                    <div style="color:#a0aec0;font-size:0.67rem;font-weight:700;text-transform:uppercase;
-                      letter-spacing:.08em;margin-bottom:0.15rem">Acción recomendada</div>
-                    <div style="color:#2d3748;line-height:1.45">{mock['accion_recomendada']}</div>
-                  </div>
-                </div>
-                <div style="margin-top:0.8rem;padding-top:0.6rem;border-top:1px solid #e8ecf4;
-                  color:#a0aec0;font-size:0.73rem">
-                  Score: <b style="color:#718096">{last.get('anomaly_score', 0):.3f}</b>
-                  &nbsp;·&nbsp; {last.get('timestamp','')}
-                </div>
-                </div>""",
-                unsafe_allow_html=True,
-            )
-        else:
-            alert_ph.info("Sin anomalías detectadas aún.")
-
-    # ── streaming loop — one event per rerun ──────────────────────────────
-    if st.session_state.live_running:
-        gen = st.session_state.live_generator
-        ev = gen.next_event()
-        ev_dict = ev.to_dict()
-
-        buf = st.session_state.live_buffer
-        buf.append(ev_dict)
-        st.session_state.live_buffer = buf[-50:]
-        st.session_state.live_n_events += 1
-
-        if ev.is_anomaly:
-            st.session_state.live_n_anomalies += 1
-            st.session_state.live_last_anomaly = ev_dict
-
-        time.sleep(stream_interval)
-        st.rerun()
+# ── Tab 5: Agente NOC ─────────────────────────────────────────────────────────
+with tab5:
+    render_agent_chat()

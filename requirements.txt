@@ -1,0 +1,17 @@
+# Dependencies for the public Streamlit Cloud demo (dashboard only).
+# The full project (API, training, MLflow, drift) uses pyproject.toml + uv.
+# LangChain/LangGraph pinned to the 1.x line — create_agent does not exist in 0.x.
+streamlit>=1.40
+pandas>=2.2
+numpy>=2.0
+plotly>=5.22
+pyarrow>=16.0
+duckdb>=1.0
+scikit-learn>=1.5
+joblib>=1.4
+structlog>=24.0
+langchain>=1.0,<2
+langchain-core>=1.0,<2
+langchain-groq>=1.0,<2
+langchain-ollama>=1.0,<2
+langgraph>=1.0,<2

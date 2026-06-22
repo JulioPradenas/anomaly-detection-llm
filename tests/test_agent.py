@@ -45,8 +45,8 @@ def test_agent_unavailable_returns_fallback(agent_no_llm):
 
 def test_agent_is_available_false_when_ollama_down(tmp_path):
     a = LogAgent(features_path=tmp_path / "x.parquet", labels_path=tmp_path / "y.parquet")
-    with patch("src.llm.agent.ChatOllama") as mock_cls:
-        mock_cls.return_value.invoke.side_effect = ConnectionError("ollama down")
+    with patch("src.llm.agent.get_chat_model") as mock_factory:
+        mock_factory.return_value.invoke.side_effect = ConnectionError("ollama down")
         a._available = None
         assert a.is_available is False
 

@@ -9,10 +9,10 @@ import pandas as pd
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
-from langchain_ollama import ChatOllama
 from langgraph.checkpoint.memory import MemorySaver
 
 from src.llm.prompts import AGENT_SYSTEM_PROMPT
+from src.llm.provider import get_chat_model
 
 
 class LogAgent:
@@ -39,7 +39,7 @@ class LogAgent:
     def is_available(self) -> bool:
         if self._available is None:
             try:
-                ChatOllama(model=self.model).invoke("ping")
+                get_chat_model(ollama_model=self.model).invoke("ping")
                 self._available = True
             except Exception:
                 self._available = False
@@ -89,7 +89,7 @@ class LogAgent:
 
     def _get_agent(self) -> Any:
         if self._agent is None:
-            llm = ChatOllama(model=self.model, temperature=0.1)
+            llm = get_chat_model(temperature=0.1, ollama_model=self.model)
             tools = self._build_tools()
             self._agent = create_agent(
                 model=llm,
@@ -125,6 +125,19 @@ class LogAgent:
                     f"CRITICAL: {critical}, HIGH: {high}, MEDIUM: {medium}."
                 )
             return f"Nodo {node}: {total} anomalías en historial."
+
+        @tool
+        def top_anomalous_nodes(limit: int = 5) -> str:
+            """Lista los nodos con más anomalías en el historial, ordenados de mayor a menor.
+            Úsalo para preguntas abiertas como '¿qué nodo tiene más anomalías?'."""
+            if not labels_path.exists():
+                return "Sin historial disponible (ejecuta notebook 06 o genera los labels primero)."
+            df = pd.read_parquet(labels_path)
+            if "node" not in df.columns:
+                return "Historial no contiene columna 'node'."
+            counts = df["node"].value_counts().head(limit)
+            lines = [f"{i + 1}. {node} — {n} anomalías" for i, (node, n) in enumerate(counts.items())]
+            return "Nodos con más anomalías:\n" + "\n".join(lines)
 
         @tool
         def get_anomaly_details(anomaly_id: str) -> str:
@@ -184,7 +197,13 @@ class LogAgent:
                 f"Asignado a: {assignee} (mock ServiceNow)"
             )
 
-        return [query_anomaly_history, get_anomaly_details, compare_incidents, create_mock_ticket]
+        return [
+            query_anomaly_history,
+            top_anomalous_nodes,
+            get_anomaly_details,
+            compare_incidents,
+            create_mock_ticket,
+        ]
 
 
 def _build_message(message: str, anomaly_context: dict[str, Any] | None) -> str:
