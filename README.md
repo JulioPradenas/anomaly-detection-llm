@@ -110,7 +110,19 @@ POST /agent/chat
    Prioridad: P1. El agente recuerda el contexto de la conversación anterior."
 ```
 
-Herramientas disponibles: `query_anomaly_history`, `get_anomaly_details`, `compare_incidents`, `create_mock_ticket`.
+Herramientas disponibles: `query_anomaly_history`, `top_anomalous_nodes`, `list_recent_incidents`, `get_anomaly_details`, `compare_incidents`, `create_mock_ticket`.
+
+### Cómo probar el agente en el [demo en vivo](https://anomaly-detection-llm.streamlit.app/)
+
+En la pestaña **Agente NOC**, esta secuencia (misma sesión) muestra memoria y encadenamiento de herramientas:
+
+1. `¿Qué nodo tiene más anomalías?` → `top_anomalous_nodes`
+2. `¿Cuántas anomalías tiene ese nodo y de qué severidad?` → resuelve "ese nodo" por memoria + `query_anomaly_history`
+3. `Muéstrame los últimos 5 incidentes` → `list_recent_incidents`
+4. `Compara los dos primeros de esa lista` → `compare_incidents`
+5. `Crea un ticket para el nodo más crítico` → `create_mock_ticket`
+
+Más ejemplos: `¿Cuáles son los 10 nodos con más anomalías?` · `¿Cuántas anomalías críticas tiene el nodo R30-M0-N9?` · `Analiza el historial del nodo R16-M0-N9`. Bajo cada respuesta se listan las herramientas que invocó el agente.
 
 ---
 
