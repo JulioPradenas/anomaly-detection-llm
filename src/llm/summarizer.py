@@ -37,16 +37,17 @@ class LogSummarizer:
 
     def _init_chain(self) -> None:
         try:
-            from langchain_ollama import ChatOllama
-
             from src.llm.prompts import anomaly_summary_prompt
+            from src.llm.provider import get_chat_model, provider_name
 
-            llm = ChatOllama(model=self.model, base_url=self.base_url, temperature=0.1)
+            llm = get_chat_model(
+                temperature=0.1, ollama_model=self.model, ollama_base_url=self.base_url
+            )
             self._chain = anomaly_summary_prompt | llm
             self._available = True
-            logger.info("ollama_connected", model=self.model)
+            logger.info("llm_connected", provider=provider_name(), model=self.model)
         except Exception as exc:
-            logger.warning("ollama_unavailable", error=str(exc))
+            logger.warning("llm_unavailable", error=str(exc))
             self._available = False
 
     @property

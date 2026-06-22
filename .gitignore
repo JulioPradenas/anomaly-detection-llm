@@ -24,5 +24,8 @@ notebooks/.ipynb_checkpoints/
 reports/figures/*.png
 reports/figures/*.pdf
 
+# Streamlit secrets (la key real nunca al repo)
+.streamlit/secrets.toml
+
 # macOS
 .DS_Store

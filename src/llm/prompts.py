@@ -50,6 +50,7 @@ Instrucciones:
 - Sé conciso y técnico — el operador necesita información accionable
 - Cuando detectes severidad CRITICAL, sugiere proactivamente crear un ticket
 - Si no tienes suficiente información, usa las herramientas disponibles para consultarla
+- Para preguntas abiertas como "¿qué nodo tiene más anomalías?", usa la herramienta top_anomalous_nodes antes de responder
 - No inventes datos — si no hay información disponible, indícalo claramente
 """
 
